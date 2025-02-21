@@ -16,4 +16,6 @@ pub enum ExFatError {
     BoundaryAlignemntTooBig(u32),
     #[error("Unable to generate unique serial number. Error: {0}")]
     NoSerial(#[from] SystemTimeError),
+    #[error("Unable to pack bitmap.")]
+    CannotPackBitmap,
 }

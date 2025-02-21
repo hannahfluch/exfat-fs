@@ -112,7 +112,7 @@ pub struct BootSector {
 }
 
 impl BootSector {
-    /// Create a new boot sector with a single FAT. All input parameters are given in bytes. (NOT SECTORS!)
+    /// Creates a new boot sector with a single FAT. All input parameters are given in bytes. (NOT SECTORS!). The offset to the bitmap is also returned.
     pub fn try_new(
         partition_offset: u64,
         bytes_per_sector: u16,
@@ -120,20 +120,20 @@ impl BootSector {
         size: u32,
         boundary_align: u32,
         pack_bitmap: bool,
-    ) -> Result<BootSector, ExFatError> {
+    ) -> Result<(BootSector, u32), ExFatError> {
         if !bytes_per_sector.is_power_of_two() || !(512..=4096).contains(&bytes_per_sector) {
             return Err(ExFatError::InvalidBytesPerSector(bytes_per_sector));
         }
 
         // format volume with a single FAT
-        let number_of_fats = 1;
+        let number_of_fats = 1u8;
         let volume_flags = VolumeFlags::empty().bits();
 
         // transform partition_offset to be measured by sectors
         let partition_offset = partition_offset.div(bytes_per_sector as u64).to_le();
 
         if !bytes_per_cluster.is_power_of_two()
-            || !(bytes_per_sector.into()..=MAX_CLUSTER_SIZE).contains(&bytes_per_cluster)
+            || !(bytes_per_sector as u32..=MAX_CLUSTER_SIZE).contains(&bytes_per_cluster)
         {
             return Err(ExFatError::InvlaidClusterSize(bytes_per_cluster));
         }
@@ -152,23 +152,24 @@ impl BootSector {
             .ok_or(ExFatError::InvalidSize(size))? as u64)
             .to_le();
 
-        let fat_offset_bytes = (bytes_per_sector as u64)
+        let fat_offset_bytes: u32 = (bytes_per_sector as u64)
             .checked_mul(24)
             .and_then(|prd| prd.checked_add(partition_offset))
             .ok_or(ExFatError::InvalidPartitionOffset(partition_offset))?
             .next_multiple_of(boundary_align as u64)
-            .sub(partition_offset);
+            .sub(partition_offset)
+            .try_into()
+            .map_err(|_| ExFatError::BoundaryAlignemntTooBig(boundary_align))?;
 
-        let fat_offset = (fat_offset_bytes.div(bytes_per_sector as u64) as u32).to_le();
+        let fat_offset = fat_offset_bytes.div(bytes_per_sector as u32).to_le();
 
-        let max_clusters: u32 = (size as u64)
+        let max_clusters: u32 = size
             .checked_sub(fat_offset_bytes)
-            .and_then(|d| d.checked_sub(number_of_fats as u64 * 8))
+            .and_then(|d| d.checked_sub(number_of_fats as u32 * 8))
             .and_then(|d| d.checked_sub(1))
-            .and_then(|d| d.checked_div(bytes_per_cluster as u64 + 4 * number_of_fats as u64))
+            .and_then(|d| d.checked_div(bytes_per_cluster + 4 * number_of_fats as u32))
             .and_then(|q| q.checked_add(1))
-            .ok_or(ExFatError::InvlaidClusterSize(bytes_per_cluster))?
-            as u32;
+            .ok_or(ExFatError::InvlaidClusterSize(bytes_per_cluster))?;
 
         let fat_length_bytes = max_clusters
             .checked_add(2)
@@ -176,23 +177,23 @@ impl BootSector {
             .map(|x| x.next_multiple_of(bytes_per_sector as u32))
             .ok_or(ExFatError::InvlaidClusterSize(bytes_per_cluster))?
             .to_le();
+
         let fat_length = fat_length_bytes / bytes_per_sector as u32;
 
-        // todo: error handling
-        let cluster_heap_offset_bytes = ((partition_offset
-            + fat_offset_bytes
+        let mut cluster_heap_offset_bytes = ((partition_offset
+            + fat_offset_bytes as u64
             + fat_length_bytes as u64 * number_of_fats as u64)
             .next_multiple_of(boundary_align as u64)
             - partition_offset) as u32;
 
-        let cluster_heap_offset = cluster_heap_offset_bytes
+        let mut cluster_heap_offset = cluster_heap_offset_bytes
             .div(bytes_per_sector as u32)
             .to_le();
 
         if cluster_heap_offset_bytes >= size {
             return Err(ExFatError::BoundaryAlignemntTooBig(boundary_align));
         }
-        let cluster_count = (size - cluster_heap_offset_bytes)
+        let mut cluster_count = (size - cluster_heap_offset_bytes)
             .div(bytes_per_cluster)
             .to_le();
         if cluster_count
@@ -205,10 +206,43 @@ impl BootSector {
         }
 
         // bitmap is first cluster of cluster heap
-        let bitmap_length_bytes = cluster_count.next_multiple_of(8) / 8;
+        let mut bitmap_offset_bytes = cluster_heap_offset_bytes;
+        let mut bitmap_length_bytes = cluster_count.next_multiple_of(8) / 8;
 
         if pack_bitmap {
-            Self::pack_bitmap();
+            let fat_end_bytes = fat_offset_bytes + fat_length_bytes;
+            let mut bitmap_length_bytes_packed;
+            let mut bitmap_length_clusters_packed =
+                bitmap_length_bytes.next_multiple_of(bytes_per_cluster);
+
+            loop {
+                let bitmap_cluster_count_packed = bitmap_length_clusters_packed / bytes_per_cluster;
+                // check if there is enough space to put bitmap before alignment boundary
+                if cluster_heap_offset_bytes - bitmap_length_clusters_packed < fat_end_bytes
+                    || cluster_count > MAX_CLUSTER_COUNT - bitmap_cluster_count_packed
+                {
+                    return Err(ExFatError::CannotPackBitmap);
+                }
+
+                let total_cluster_count = cluster_count + bitmap_cluster_count_packed;
+                bitmap_length_bytes_packed = total_cluster_count.next_multiple_of(8).div(8);
+                let new_bitmap_length_clusters =
+                    bitmap_length_bytes_packed.next_multiple_of(bytes_per_cluster);
+
+                if new_bitmap_length_clusters == bitmap_length_clusters_packed {
+                    cluster_heap_offset_bytes -= bitmap_length_clusters_packed;
+                    cluster_count = total_cluster_count.to_le();
+                    bitmap_offset_bytes -= bitmap_length_clusters_packed;
+                    bitmap_length_bytes = bitmap_length_bytes_packed;
+                    break;
+                }
+                bitmap_length_clusters_packed = new_bitmap_length_clusters;
+            }
+
+            // reassing changed variable
+            cluster_heap_offset = cluster_heap_offset_bytes
+                .div(bytes_per_sector as u32)
+                .to_le();
         }
         let cluster_length = bitmap_length_bytes.next_multiple_of(bytes_per_cluster);
 
@@ -228,38 +262,32 @@ impl BootSector {
         let boot_code = [0xF4; 390];
         let boot_signature = BOOT_SIGNATURE.to_le();
 
-        Ok(Self {
-            jump_boot: [0xeb, 0x76, 0x90],
-            filesystem_name: *b"EXFAT   ",
-            _reserved: [0; 53],
-            partition_offset,
-            volume_length,
-            bytes_per_sector_shift,
-            fat_offset,
-            number_of_fats,
-            fat_length,
-            cluster_heap_offset,
-            cluster_count,
-            sectors_per_cluster_shift,
-            first_cluster_of_root_directory,
-            volume_serial_number,
-            volume_flags,
-            file_system_revision,
-            drive_select,
-            percent_in_use,
-            _reserved2: [0; 7],
-            boot_code,
-            boot_signature,
-        })
-    }
-
-    fn pack_bitmap() {
-        // finfo.clu_byte_off -= bitmap_clu_len;
-        // finfo.total_clu_cnt = total_clu_cnt;
-        // finfo.bitmap_byte_off -= bitmap_clu_len;
-        // finfo.bitmap_byte_len = bitmap_byte_len;
-
-        todo!()
+        Ok((
+            Self {
+                jump_boot: [0xeb, 0x76, 0x90],
+                filesystem_name: *b"EXFAT   ",
+                _reserved: [0; 53],
+                partition_offset,
+                volume_length,
+                bytes_per_sector_shift,
+                fat_offset,
+                number_of_fats,
+                fat_length,
+                cluster_heap_offset,
+                cluster_count,
+                sectors_per_cluster_shift,
+                first_cluster_of_root_directory,
+                volume_serial_number,
+                volume_flags,
+                file_system_revision,
+                drive_select,
+                percent_in_use,
+                _reserved2: [0; 7],
+                boot_code,
+                boot_signature,
+            },
+            bitmap_offset_bytes,
+        ))
     }
 }
 
@@ -314,12 +342,12 @@ bitflags! {
 }
 
 #[test]
-fn test_boot_sector() {
+fn test_boot_sector_simple() {
     let size: u32 = 256 * crate::MB as u32;
     let bytes_per_sector = 512;
     let bytes_per_cluster = 4 * crate::KB as u32;
 
-    let boot_sector = BootSector::try_new(
+    let (boot_sector, _) = BootSector::try_new(
         0,
         bytes_per_sector,
         bytes_per_cluster,
@@ -337,6 +365,35 @@ fn test_boot_sector() {
     assert_eq!(boot_sector.fat_length, 510);
     assert_eq!(boot_sector.cluster_heap_offset, 4096);
     assert_eq!(boot_sector.cluster_count, 65024);
+    assert_eq!(boot_sector.first_cluster_of_root_directory, 6);
+    assert_eq!(boot_sector.bytes_per_sector_shift, 9);
+    assert_eq!(boot_sector.sectors_per_cluster_shift, 3);
+}
+
+#[test]
+fn test_boot_sector_pack_bitmap() {
+    let size: u32 = 256 * crate::MB as u32;
+    let bytes_per_sector = 512;
+    let bytes_per_cluster = 4 * crate::KB as u32;
+
+    let (boot_sector, _) = BootSector::try_new(
+        0,
+        bytes_per_sector,
+        bytes_per_cluster,
+        size,
+        crate::DEFAULT_BOUNDARY_ALIGNEMENT,
+        true,
+    )
+    .unwrap();
+
+    assert_eq!(boot_sector.jump_boot, [0xEB, 0x76, 0x90]);
+    assert_eq!(boot_sector.filesystem_name, *b"EXFAT   ");
+    assert_eq!(boot_sector.boot_signature, BOOT_SIGNATURE);
+    assert_eq!(boot_sector.volume_length, 524288);
+    assert_eq!(boot_sector.fat_offset, 2048);
+    assert_eq!(boot_sector.fat_length, 510);
+    assert_eq!(boot_sector.cluster_heap_offset, 4080);
+    assert_eq!(boot_sector.cluster_count, 65026);
     assert_eq!(boot_sector.first_cluster_of_root_directory, 6);
     assert_eq!(boot_sector.bytes_per_sector_shift, 9);
     assert_eq!(boot_sector.sectors_per_cluster_shift, 3);
