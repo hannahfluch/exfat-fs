@@ -1,11 +1,11 @@
-use std::time::SystemTimeError;
+use std::{io, time::SystemTimeError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExFatError {
     #[error("Invalid bytes per sector. Must be a power of `2` and between `512` and `4096`: {0}.")]
     InvalidBytesPerSector(u16),
     #[error("Invalid volume size: {0}.")]
-    InvalidSize(u32),
+    InvalidSize(u64),
     #[error("Invalid partition offset: {0}.")]
     InvalidPartitionOffset(u64),
     #[error("Invalid number of FATs (must be 1 or 2): {0}.")]
@@ -18,4 +18,8 @@ pub enum ExFatError {
     NoSerial(#[from] SystemTimeError),
     #[error("Unable to pack bitmap.")]
     CannotPackBitmap,
+    #[error("File size does not match exFAT size.")]
+    InvalidFileSize,
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
 }
