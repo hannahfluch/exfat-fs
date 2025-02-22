@@ -1,6 +1,6 @@
 use std::fs::OpenOptions;
 
-use boot::meta::BootSectorMeta;
+use boot::{meta::BootSectorMeta, FormatOptions};
 
 const GB: u32 = 1024 * 1024 * 1024;
 const MB: u32 = 1024 * 1024;
@@ -14,6 +14,7 @@ pub mod error;
 
 pub struct ExFat;
 
+// todo: checksum claculation
 fn main() {
     let size: u64 = 256 * MB as u64;
     let bytes_per_sector = 512;
@@ -32,18 +33,18 @@ fn main() {
         cluster_size,
         size,
         DEFAULT_BOUNDARY_ALIGNEMENT,
-        false,
+        FormatOptions::new(false, false, size),
     )
     .unwrap();
 
     let mut file = OpenOptions::new()
         .write(true)
         .read(true)
-        .truncate(true)
         .create(true)
+        .truncate(false)
         .open("test")
         .unwrap();
 
-    boot_sector_meta.write(&mut file).unwrap();
+    boot_sector_meta.write(&mut file, true).unwrap();
     println!("done");
 }

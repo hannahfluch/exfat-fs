@@ -1,11 +1,11 @@
-use crate::KB;
+use bytemuck::{Pod, Zeroable};
 
 use super::{
     meta::BootSectorMeta, FileSystemRevision, VolumeSerialNumber, BOOT_SIGNATURE, DRIVE_SELECT,
 };
 /// The Main/Backup Boot Sector structure for an exFAT volume.
 /// This structure defines the essential parameters required for the file system.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 pub struct BootSector {
     /// The jump instruction for CPUs to execute bootstrapping instructions in `boot_code`.
@@ -145,7 +145,7 @@ fn small_simple() {
         bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        false,
+        crate::boot::FormatOptions::new(false, false, size),
     )
     .unwrap();
 
@@ -176,7 +176,7 @@ fn small_pack_bitmap() {
         bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        true,
+        crate::boot::FormatOptions::new(true, false, size),
     )
     .unwrap();
 
@@ -199,7 +199,7 @@ fn small_pack_bitmap() {
 fn big_simple() {
     let size: u64 = 5 * crate::GB as u64;
     let bytes_per_sector = 512;
-    let bytes_per_cluster = 32 * KB as u32;
+    let bytes_per_cluster = 32 * crate::KB as u32;
 
     let meta = BootSectorMeta::try_new(
         0,
@@ -207,7 +207,7 @@ fn big_simple() {
         bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        false,
+        crate::boot::FormatOptions::new(false, false, size),
     )
     .unwrap();
 

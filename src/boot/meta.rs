@@ -1,13 +1,17 @@
 use std::{
-    io::{Seek, Write},
+    fs::File,
+    io::{self, Seek, Write},
     ops::{Div, Sub},
 };
 
-use crate::error::ExFatError;
+use bytemuck::{bytes_of, cast_slice};
+
+use crate::{disk, error::ExFatError};
 
 use super::{
-    sector::BootSector, FileSystemRevision, VolumeFlags, VolumeSerialNumber, FIRST_CLUSTER_INDEX,
-    MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE, UPCASE_TABLE_SIZE_BYTES,
+    sector::BootSector, FileSystemRevision, FormatOptions, VolumeSerialNumber, EXTENDED_BOOT,
+    EXTENDED_BOOT_SIGNATURE, FIRST_CLUSTER_INDEX, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE,
+    UPCASE_TABLE_SIZE_BYTES,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -30,8 +34,9 @@ pub struct BootSectorMeta {
     pub(in crate::boot) bytes_per_cluster: u32,
     pub(in crate::boot) size: u64,
     pub(in crate::boot) boundary_align: u32,
-    pub(in crate::boot) pack_bitmap: bool,
     pub(in crate::boot) volume_serial_number: VolumeSerialNumber,
+    pub(in crate::boot) root_offset_bytes: u32,
+    pub(in crate::boot) format_options: FormatOptions,
 }
 
 impl BootSectorMeta {
@@ -41,15 +46,19 @@ impl BootSectorMeta {
         bytes_per_cluster: u32,
         size: u64,
         boundary_align: u32,
-        pack_bitmap: bool,
+        format_options: FormatOptions,
     ) -> Result<BootSectorMeta, ExFatError> {
+        if format_options.dev_size < size {
+            return Err(ExFatError::InvalidFileSize);
+        }
+
         if !bytes_per_sector.is_power_of_two() || !(512..=4096).contains(&bytes_per_sector) {
             return Err(ExFatError::InvalidBytesPerSector(bytes_per_sector));
         }
 
         // format volume with a single FAT
         let number_of_fats = 1u8;
-        let volume_flags = VolumeFlags::empty().bits();
+        let volume_flags = 0;
 
         // transform partition_offset to be measured by sectors
         let partition_offset = partition_offset / bytes_per_sector as u64;
@@ -131,7 +140,7 @@ impl BootSectorMeta {
         let mut bitmap_offset_bytes = cluster_heap_offset_bytes;
         let mut bitmap_length_bytes = cluster_count.next_multiple_of(8) / 8;
 
-        if pack_bitmap {
+        if format_options.pack_bitmap {
             let fat_end_bytes = fat_offset_bytes as u64 + fat_length_bytes;
             let mut bitmap_length_bytes_packed;
             let mut bitmap_length_clusters_packed =
@@ -173,6 +182,7 @@ impl BootSectorMeta {
 
         let cluster_length = (uptable_length_bytes as u32).next_multiple_of(bytes_per_cluster);
 
+        let root_offset_bytes = uptable_offset_bytes + cluster_length;
         let first_cluster_of_root_directory =
             uptable_start_cluster + cluster_length / bytes_per_cluster;
 
@@ -197,27 +207,77 @@ impl BootSectorMeta {
             size,
             bytes_per_cluster,
             bytes_per_sector,
-            pack_bitmap,
             boundary_align,
+            root_offset_bytes,
+            format_options,
         })
     }
 
-    /// Attempts to write the boot sector onto the device. Returning a struct of all the data
-    /// written.
-    pub fn write<T>(&self, f: &mut T) -> Result<BootSector, ExFatError>
-    where
-        T: Write + Seek,
-    {
-        let len = f
-            .seek(std::io::SeekFrom::End(0))
-            .map_err(ExFatError::from)?;
+    /// Attempts to write the boot region onto the device.
+    pub fn write(&self, f: &mut File, truncate: bool) -> Result<(), ExFatError> {
+        let len = f.metadata().map_err(ExFatError::from)?.len();
 
-        println!("length: {}, size: {}", len, self.size);
-        if len < self.size {
-            return Err(ExFatError::InvalidFileSize);
+        if len != self.format_options.dev_size {
+            if truncate {
+                f.set_len(self.format_options.dev_size)
+                    .map_err(ExFatError::from)?;
+            } else {
+                return Err(ExFatError::InvalidFileSize);
+            }
         }
 
-        let _boot_sector = BootSector::new(self);
-        todo!();
+        let size = if self.format_options.full_format {
+            self.size
+        } else {
+            self.root_offset_bytes as u64 + self.bytes_per_cluster as u64
+        };
+
+        // clear disk size as needed
+        disk::write_zeroes(f, size, 0).map_err(ExFatError::from)?;
+
+        let mut offset_sectors = 0;
+        let boot_sector = BootSector::new(self);
+        // write boot sector
+        let bytes = bytes_of(&boot_sector);
+        self.write_sector(f, bytes, offset_sectors)
+            .map_err(ExFatError::from)?;
+        offset_sectors += 1;
+
+        // write extended boot sectors
+        self.write_extended(f, offset_sectors, EXTENDED_BOOT)
+            .map_err(ExFatError::from)?;
+        offset_sectors += EXTENDED_BOOT;
+
+        println!("current: {}", offset_sectors);
+
+        Ok(())
+    }
+
+    /// Attempts to write a single sector at the specified offset (given in sectors).
+    fn write_sector(&self, f: &mut File, bytes: &[u8], offset_sectors: u64) -> io::Result<()> {
+        let offset_bytes = offset_sectors * self.bytes_per_sector as u64;
+
+        f.seek(std::io::SeekFrom::Start(offset_bytes))?;
+        f.write_all(bytes)
+    }
+
+    /// Attempts to write a given amount of extended boot sectors at the specified offset (given in
+    /// sectors).
+    fn write_extended(&self, f: &mut File, offset_sectors: u64, amount: u64) -> io::Result<()> {
+        let offset_bytes = self.bytes_per_sector as u64 * offset_sectors;
+
+        f.seek(io::SeekFrom::Start(offset_bytes))?;
+
+        let buffer_len = self.bytes_per_sector as usize / 4;
+        let mut buffer = vec![0; buffer_len];
+
+        buffer[buffer_len - 1] = EXTENDED_BOOT_SIGNATURE.to_le();
+
+        for i in 0..amount {
+            let sector_offset = offset_sectors + i;
+            self.write_sector(f, cast_slice(&buffer), sector_offset)?;
+        }
+
+        Ok(())
     }
 }

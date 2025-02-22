@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bitflags = "2.8.0"
+bytemuck = { version = "1.21.0", features = ["derive", "min_const_generics"] }
 thiserror = "2.0.11"
