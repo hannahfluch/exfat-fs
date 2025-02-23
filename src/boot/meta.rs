@@ -7,7 +7,10 @@ use std::{
 use bytemuck::{bytes_of, cast_slice};
 use checked_num::CheckedU64;
 
-use crate::{disk, error::ExFatError};
+use crate::{
+    disk::{self, write_zeroes},
+    error::ExFatError,
+};
 
 use super::{
     sector::BootSector, FileSystemRevision, FormatOptions, VolumeSerialNumber, EXTENDED_BOOT,
@@ -241,9 +244,24 @@ impl BootSectorMeta {
             .map_err(ExFatError::from)?;
         offset_sectors += EXTENDED_BOOT;
 
-        // todo: write oem sector
+        // write oem sector (unused so entirely empty)
+        // todo: add flash/custom parameter support
+        write_zeroes(
+            f,
+            self.bytes_per_sector as u64,
+            self.offset_sector_bytes(offset_sectors),
+        )
+        .map_err(ExFatError::from)?;
+        offset_sectors += 1;
 
-        // todo: write reserved sector
+        // write reserved sector
+        write_zeroes(
+            f,
+            self.bytes_per_sector as u64,
+            self.offset_sector_bytes(offset_sectors),
+        )
+        .map_err(ExFatError::from)?;
+        offset_sectors += 1;
 
         // todo: checksum
 
@@ -276,5 +294,10 @@ impl BootSectorMeta {
         }
 
         Ok(())
+    }
+
+    /// Offset in bytes until the given sector index.
+    fn offset_sector_bytes(&self, sector_index: u64) -> u64 {
+        self.bytes_per_sector as u64 * sector_index
     }
 }
