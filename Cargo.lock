@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "autocfg"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
+
+[[package]]
 name = "bytemuck"
 version = "1.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -23,11 +29,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "checked_num"
+version = "0.1.2"
+source = "git+https://github.com/Benstoy/checked_num#a9661ad0e375f173af842c2031636c6c56676b1f"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "exfat"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "checked_num",
  "thiserror",
+]
+
+[[package]]
+name = "num-traits"
+version = "0.2.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
+dependencies = [
+ "autocfg",
 ]
 
 [[package]]

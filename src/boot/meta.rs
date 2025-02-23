@@ -5,6 +5,7 @@ use std::{
 };
 
 use bytemuck::{bytes_of, cast_slice};
+use checked_num::CheckedU64;
 
 use crate::{disk, error::ExFatError};
 
@@ -71,20 +72,14 @@ impl BootSectorMeta {
         let bytes_per_sector_shift = bytes_per_sector.ilog2() as u8;
         let sectors_per_cluster_shift = (bytes_per_cluster / bytes_per_sector as u32).ilog2() as u8;
 
-        let volume_length = size
-            .checked_div(bytes_per_sector.into())
-            .and_then(|o| {
-                if o < (1 << (20 - bytes_per_sector_shift)) {
-                    None
-                } else {
-                    Some(o)
-                }
-            })
-            .ok_or(ExFatError::InvalidSize(size))?;
+        let volume_length = size / bytes_per_sector as u64;
 
-        let fat_offset_bytes: u32 = (bytes_per_sector as u64)
-            .checked_mul(24)
-            .and_then(|prd| prd.checked_add(partition_offset))
+        if volume_length < (1 << (20 - bytes_per_sector_shift)) {
+            return Err(ExFatError::InvalidSize(size));
+        }
+
+        let fat_offset_bytes: u32 = (CheckedU64::new(bytes_per_sector as u64) * 24
+            + partition_offset)
             .ok_or(ExFatError::InvalidPartitionOffset(partition_offset))?
             .next_multiple_of(boundary_align as u64)
             .sub(partition_offset)
@@ -93,19 +88,16 @@ impl BootSectorMeta {
 
         let fat_offset = fat_offset_bytes / bytes_per_sector as u32;
 
-        let max_clusters: u64 = size
-            .checked_sub(fat_offset_bytes as u64)
-            .and_then(|d| d.checked_sub(number_of_fats as u64 * 8))
-            .and_then(|d| d.checked_sub(1))
-            .and_then(|d| d.checked_div(bytes_per_cluster as u64 + 4 * number_of_fats as u64))
-            .and_then(|q| q.checked_add(1))
-            .ok_or(ExFatError::InvlaidClusterSize(bytes_per_cluster))?;
+        let max_clusters: CheckedU64 =
+            ((CheckedU64::new(size) - fat_offset_bytes as u64 - number_of_fats as u64 * 8 - 1)
+                / (bytes_per_cluster as u64 + 4 * number_of_fats as u64)
+                + 1)
+            .ok_or(ExFatError::InvlaidClusterSize(bytes_per_cluster))?
+            .into();
 
-        let fat_length_bytes = max_clusters
-            .checked_add(2)
-            .and_then(|x| x.checked_mul(4))
-            .map(|x| x.next_multiple_of(bytes_per_sector as u64))
-            .ok_or(ExFatError::InvlaidClusterSize(bytes_per_cluster))?;
+        let fat_length_bytes = ((max_clusters + 2) * 4)
+            .ok_or(ExFatError::InvlaidClusterSize(bytes_per_cluster))?
+            .next_multiple_of(bytes_per_sector as u64);
 
         let fat_length: u32 = (fat_length_bytes / bytes_per_sector as u64)
             .try_into()
@@ -122,6 +114,7 @@ impl BootSectorMeta {
         if cluster_heap_offset_bytes as u64 >= size {
             return Err(ExFatError::BoundaryAlignemntTooBig(boundary_align));
         }
+
         let mut cluster_count: u32 = ((size - cluster_heap_offset_bytes as u64)
             / bytes_per_cluster as u64)
             .try_into()
@@ -248,7 +241,11 @@ impl BootSectorMeta {
             .map_err(ExFatError::from)?;
         offset_sectors += EXTENDED_BOOT;
 
-        println!("current: {}", offset_sectors);
+        // todo: write oem sector
+
+        // todo: write reserved sector
+
+        // todo: checksum
 
         Ok(())
     }
