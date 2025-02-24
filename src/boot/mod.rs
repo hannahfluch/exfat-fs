@@ -5,8 +5,10 @@ use bytemuck::{Pod, Zeroable};
 use crate::MB;
 use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 
-/// Offset for main boot sector
-pub const MAIN_BOOT_OFFSET: usize = 0;
+/// Offset for main boot region (in sectors)
+pub const MAIN_BOOT_OFFSET: u64 = 0;
+/// Offset to backup boot region (in sectors)
+pub const BACKUP_BOOT_OFFSET: u64 = 12;
 /// Maximum amount of clusters
 pub const MAX_CLUSTER_COUNT: u32 = 0xFFFFFFF5;
 /// Maximux size of clusters

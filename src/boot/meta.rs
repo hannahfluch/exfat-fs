@@ -11,8 +11,8 @@ use crate::{disk, error::ExFatError};
 
 use super::{
     checksum::Checksum, sector::BootSector, FileSystemRevision, FormatOptions, VolumeSerialNumber,
-    EXTENDED_BOOT, EXTENDED_BOOT_SIGNATURE, FIRST_CLUSTER_INDEX, MAX_CLUSTER_COUNT,
-    MAX_CLUSTER_SIZE, UPCASE_TABLE_SIZE_BYTES,
+    BACKUP_BOOT_OFFSET, EXTENDED_BOOT, EXTENDED_BOOT_SIGNATURE, FIRST_CLUSTER_INDEX,
+    MAIN_BOOT_OFFSET, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE, UPCASE_TABLE_SIZE_BYTES,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -208,7 +208,7 @@ impl BootSectorMeta {
 
     /// Attempts to write the boot region onto the device.
     pub fn write(&self, f: &mut File, truncate: bool) -> Result<(), ExFatError> {
-        let len = f.metadata().map_err(ExFatError::from)?.len();
+        let len = f.metadata()?.len();
 
         if len != self.format_options.dev_size {
             if truncate {
@@ -227,9 +227,19 @@ impl BootSectorMeta {
         // clear disk size as needed
         disk::write_zeroes(f, size, 0)?;
 
+        // write main boot region
+        self.write_boot_region(f, MAIN_BOOT_OFFSET)?;
+
+        // write backup boot region
+        self.write_boot_region(f, BACKUP_BOOT_OFFSET)?;
+
+        Ok(())
+    }
+
+    /// Attempts to write a boot region to a disk at the specified sector offet.
+    fn write_boot_region(&self, f: &mut File, mut offset_sectors: u64) -> io::Result<()> {
         let mut checksum = Checksum::new(self.bytes_per_sector);
 
-        let mut offset_sectors = 0;
         let boot_sector = BootSector::new(self);
 
         // write boot sector
