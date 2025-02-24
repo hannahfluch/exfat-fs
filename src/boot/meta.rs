@@ -1,21 +1,18 @@
 use std::{
     fs::File,
-    io::{self, Seek, Write},
+    io::{self, Seek, SeekFrom, Write},
     ops::{Div, Sub},
 };
 
 use bytemuck::{bytes_of, cast_slice};
 use checked_num::CheckedU64;
 
-use crate::{
-    disk::{self, write_zeroes},
-    error::ExFatError,
-};
+use crate::{disk, error::ExFatError};
 
 use super::{
-    sector::BootSector, FileSystemRevision, FormatOptions, VolumeSerialNumber, EXTENDED_BOOT,
-    EXTENDED_BOOT_SIGNATURE, FIRST_CLUSTER_INDEX, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE,
-    UPCASE_TABLE_SIZE_BYTES,
+    checksum::Checksum, sector::BootSector, FileSystemRevision, FormatOptions, VolumeSerialNumber,
+    EXTENDED_BOOT, EXTENDED_BOOT_SIGNATURE, FIRST_CLUSTER_INDEX, MAX_CLUSTER_COUNT,
+    MAX_CLUSTER_SIZE, UPCASE_TABLE_SIZE_BYTES,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -215,8 +212,7 @@ impl BootSectorMeta {
 
         if len != self.format_options.dev_size {
             if truncate {
-                f.set_len(self.format_options.dev_size)
-                    .map_err(ExFatError::from)?;
+                f.set_len(self.format_options.dev_size)?;
             } else {
                 return Err(ExFatError::InvalidFileSize);
             }
@@ -229,59 +225,64 @@ impl BootSectorMeta {
         };
 
         // clear disk size as needed
-        disk::write_zeroes(f, size, 0).map_err(ExFatError::from)?;
+        disk::write_zeroes(f, size, 0)?;
+
+        let mut checksum = Checksum::new(self.bytes_per_sector);
 
         let mut offset_sectors = 0;
         let boot_sector = BootSector::new(self);
+
         // write boot sector
         let bytes = bytes_of(&boot_sector);
-        self.write_sector(f, bytes, offset_sectors)
-            .map_err(ExFatError::from)?;
+        self.write_sector(f, bytes, offset_sectors)?;
+        checksum.boot_sector(bytes);
         offset_sectors += 1;
 
         // write extended boot sectors
-        self.write_extended(f, offset_sectors, EXTENDED_BOOT)
-            .map_err(ExFatError::from)?;
+        let bytes = self.write_extended(f, offset_sectors, EXTENDED_BOOT)?;
+        checksum.extended_boot_sector(cast_slice(&bytes), EXTENDED_BOOT);
         offset_sectors += EXTENDED_BOOT;
 
         // write oem sector (unused so entirely empty)
         // todo: add flash/custom parameter support
-        write_zeroes(
+        disk::write_zeroes(
             f,
             self.bytes_per_sector as u64,
             self.offset_sector_bytes(offset_sectors),
-        )
-        .map_err(ExFatError::from)?;
+        )?;
+        checksum.zero_sector();
         offset_sectors += 1;
 
         // write reserved sector
-        write_zeroes(
+        disk::write_zeroes(
             f,
             self.bytes_per_sector as u64,
             self.offset_sector_bytes(offset_sectors),
-        )
-        .map_err(ExFatError::from)?;
+        )?;
+        checksum.zero_sector();
         offset_sectors += 1;
 
-        // todo: checksum
+        // checksum sector
+        self.write_checksum(f, checksum, offset_sectors)?;
 
         Ok(())
     }
 
     /// Attempts to write a single sector at the specified offset (given in sectors).
     fn write_sector(&self, f: &mut File, bytes: &[u8], offset_sectors: u64) -> io::Result<()> {
-        let offset_bytes = offset_sectors * self.bytes_per_sector as u64;
-
-        f.seek(std::io::SeekFrom::Start(offset_bytes))?;
+        f.seek(SeekFrom::Start(self.offset_sector_bytes(offset_sectors)))?;
         f.write_all(bytes)
     }
 
     /// Attempts to write a given amount of extended boot sectors at the specified offset (given in
-    /// sectors).
-    fn write_extended(&self, f: &mut File, offset_sectors: u64, amount: u64) -> io::Result<()> {
-        let offset_bytes = self.bytes_per_sector as u64 * offset_sectors;
-
-        f.seek(io::SeekFrom::Start(offset_bytes))?;
+    /// sectors). Returns the buffer of the extended boot sector.
+    fn write_extended(
+        &self,
+        f: &mut File,
+        offset_sectors: u64,
+        amount: u64,
+    ) -> io::Result<Vec<u32>> {
+        f.seek(SeekFrom::Start(self.offset_sector_bytes(offset_sectors)))?;
 
         let buffer_len = self.bytes_per_sector as usize / 4;
         let mut buffer = vec![0; buffer_len];
@@ -292,6 +293,29 @@ impl BootSectorMeta {
             let sector_offset = offset_sectors + i;
             self.write_sector(f, cast_slice(&buffer), sector_offset)?;
         }
+
+        Ok(buffer)
+    }
+
+    /// Attempts to write the checksum sector
+    fn write_checksum(
+        &self,
+        f: &mut File,
+        checksum: Checksum,
+        offset_sectors: u64,
+    ) -> io::Result<()> {
+        f.seek(SeekFrom::Start(self.offset_sector_bytes(offset_sectors)))?;
+
+        let checksum = checksum.get();
+
+        let buffer_len = self.bytes_per_sector as usize / 4;
+        let mut buffer = vec![0u32; buffer_len];
+
+        for i in buffer.iter_mut() {
+            *i = checksum;
+        }
+
+        self.write_sector(f, cast_slice(&buffer), offset_sectors)?;
 
         Ok(())
     }

@@ -26,6 +26,7 @@ pub const EXTENDED_BOOT_SIGNATURE: u32 = 0xAA550000;
 /// Number of extended boot sectors per boot region
 pub const EXTENDED_BOOT: u64 = 8;
 
+pub mod checksum;
 pub mod meta;
 pub mod sector;
 
