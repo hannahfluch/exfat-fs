@@ -347,3 +347,44 @@ impl Formatter {
         self.bytes_per_sector as u64 * sector_index
     }
 }
+
+#[test]
+fn boot_region() {
+    use std::io::Read;
+
+    let size: u64 = 32 * crate::MB as u64;
+    let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
+    let bytes_per_sector = 512;
+    let bytes_per_cluster = 4 * crate::KB as u32;
+
+    let formatter = Formatter::try_new(
+        0,
+        bytes_per_sector,
+        bytes_per_cluster,
+        size,
+        crate::DEFAULT_BOUNDARY_ALIGNEMENT,
+        FormatOptions::new(false, false, size),
+    )
+    .unwrap();
+    formatter.write(&mut f).unwrap();
+
+    let offset_main_checksum_bytes = 11 * bytes_per_sector as u64;
+    let offset_backup_checksum_bytes = 23 * bytes_per_sector as u64;
+
+    // assert checksum is the same for main boot region and backup boot region
+    let mut read_main = vec![0u8; 8];
+    f.seek(std::io::SeekFrom::Start(offset_main_checksum_bytes))
+        .unwrap();
+    f.read_exact(&mut read_main).unwrap();
+
+    let mut read_backup = vec![0u8; 8];
+
+    f.seek(std::io::SeekFrom::Start(offset_backup_checksum_bytes))
+        .unwrap();
+    f.read_exact(&mut read_backup).unwrap();
+
+    assert_eq!(
+        read_backup, read_main,
+        "checksum of main and backup boot region must be equal"
+    );
+}
