@@ -1,6 +1,6 @@
 use std::fs::OpenOptions;
 
-use boot::{meta::BootSectorMeta, FormatOptions};
+use boot::{format::Formatter, FormatOptions};
 
 const GB: u32 = 1024 * 1024 * 1024;
 const MB: u32 = 1024 * 1024;
@@ -27,7 +27,7 @@ fn main() {
         128 * KB
     } as u32;
 
-    let boot_sector_meta = BootSectorMeta::try_new(
+    let formatter = Formatter::try_new(
         0,
         bytes_per_sector,
         cluster_size,
@@ -45,6 +45,6 @@ fn main() {
         .open("test")
         .unwrap();
 
-    boot_sector_meta.write(&mut file, true).unwrap();
+    formatter.write(&mut file, true).unwrap();
     println!("done");
 }

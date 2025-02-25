@@ -16,7 +16,7 @@ use super::{
 };
 
 #[derive(Copy, Clone, Debug)]
-pub struct BootSectorMeta {
+pub struct Formatter {
     pub(in crate::boot) partition_offset: u64,
     pub(in crate::boot) volume_length: u64,
     pub(in crate::boot) fat_offset: u32,
@@ -40,7 +40,7 @@ pub struct BootSectorMeta {
     pub(in crate::boot) format_options: FormatOptions,
 }
 
-impl BootSectorMeta {
+impl Formatter {
     pub fn try_new(
         partition_offset: u64,
         bytes_per_sector: u16,
@@ -48,7 +48,7 @@ impl BootSectorMeta {
         size: u64,
         boundary_align: u32,
         format_options: FormatOptions,
-    ) -> Result<BootSectorMeta, ExFatError> {
+    ) -> Result<Formatter, ExFatError> {
         if format_options.dev_size < size {
             return Err(ExFatError::InvalidFileSize);
         }

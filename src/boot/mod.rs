@@ -29,7 +29,7 @@ pub const EXTENDED_BOOT_SIGNATURE: u32 = 0xAA550000;
 pub const EXTENDED_BOOT: u64 = 8;
 
 pub mod checksum;
-pub mod meta;
+pub mod format;
 pub mod sector;
 
 /// Structure representing the file system revision.

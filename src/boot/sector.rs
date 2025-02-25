@@ -1,7 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 
 use super::{
-    meta::BootSectorMeta, FileSystemRevision, VolumeSerialNumber, BOOT_SIGNATURE, DRIVE_SELECT,
+    format::Formatter, FileSystemRevision, VolumeSerialNumber, BOOT_SIGNATURE, DRIVE_SELECT,
 };
 /// The Main/Backup Boot Sector structure for an exFAT volume.
 /// This structure defines the essential parameters required for the file system.
@@ -106,7 +106,7 @@ pub struct BootSector {
 
 impl BootSector {
     /// Creates a new boot sector with a single FAT. All input parameters are given in bytes. (NOT SECTORS!). The offset to the bitmap is also returned.
-    pub fn new(meta: &BootSectorMeta) -> BootSector {
+    pub fn new(meta: &Formatter) -> BootSector {
         Self {
             jump_boot: [0xeb, 0x76, 0x90],
             filesystem_name: *b"EXFAT   ",
@@ -139,7 +139,7 @@ fn small_simple() {
     let bytes_per_sector = 512;
     let bytes_per_cluster = 4 * crate::KB as u32;
 
-    let meta = BootSectorMeta::try_new(
+    let meta = Formatter::try_new(
         0,
         bytes_per_sector,
         bytes_per_cluster,
@@ -170,7 +170,7 @@ fn small_pack_bitmap() {
     let bytes_per_sector = 512;
     let bytes_per_cluster = 4 * crate::KB as u32;
 
-    let meta = BootSectorMeta::try_new(
+    let meta = Formatter::try_new(
         0,
         bytes_per_sector,
         bytes_per_cluster,
@@ -201,7 +201,7 @@ fn big_simple() {
     let bytes_per_sector = 512;
     let bytes_per_cluster = 32 * crate::KB as u32;
 
-    let meta = BootSectorMeta::try_new(
+    let meta = Formatter::try_new(
         0,
         bytes_per_sector,
         bytes_per_cluster,
