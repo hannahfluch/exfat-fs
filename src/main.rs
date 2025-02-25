@@ -14,7 +14,6 @@ pub mod error;
 
 pub struct ExFat;
 
-// todo: checksum claculation
 fn main() {
     let size: u64 = 256 * MB as u64;
     let bytes_per_sector = 512;
