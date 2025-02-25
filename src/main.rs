@@ -45,6 +45,6 @@ fn main() {
         .open("test")
         .unwrap();
 
-    formatter.write(&mut file, true).unwrap();
+    formatter.write(&mut file).unwrap();
     println!("done");
 }

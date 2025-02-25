@@ -1,5 +1,4 @@
 use std::{
-    fs::File,
     io::{self, Seek, SeekFrom, Write},
     ops::{Div, Sub},
 };
@@ -206,16 +205,20 @@ impl Formatter {
         })
     }
 
-    /// Attempts to write the boot region onto the device.
-    pub fn write(&self, f: &mut File, truncate: bool) -> Result<(), ExFatError> {
-        let len = f.metadata()?.len();
+    /// Attempts to write the boot region onto the device. The file length must be the same as the
+    /// provided `dev_size` in the [`Formatter`].
+    pub fn write<T: Write + Seek>(&self, f: &mut T) -> Result<(), ExFatError> {
+        let old_pos = f.stream_position()?;
+        let len = f.seek(SeekFrom::End(0))?;
+
+        if old_pos != len {
+            f.seek(SeekFrom::Start(old_pos))?;
+        }
+
+        assert_eq!(len, self.format_options.dev_size);
 
         if len != self.format_options.dev_size {
-            if truncate {
-                f.set_len(self.format_options.dev_size)?;
-            } else {
-                return Err(ExFatError::InvalidFileSize);
-            }
+            return Err(ExFatError::InvalidFileSize);
         }
 
         let size = if self.format_options.full_format {
@@ -237,7 +240,11 @@ impl Formatter {
     }
 
     /// Attempts to write a boot region to a disk at the specified sector offet.
-    fn write_boot_region(&self, f: &mut File, mut offset_sectors: u64) -> io::Result<()> {
+    fn write_boot_region<T: Write + Seek>(
+        &self,
+        f: &mut T,
+        mut offset_sectors: u64,
+    ) -> io::Result<()> {
         let mut checksum = Checksum::new(self.bytes_per_sector);
 
         let boot_sector = BootSector::new(self);
@@ -279,16 +286,21 @@ impl Formatter {
     }
 
     /// Attempts to write a single sector at the specified offset (given in sectors).
-    fn write_sector(&self, f: &mut File, bytes: &[u8], offset_sectors: u64) -> io::Result<()> {
+    fn write_sector<T: Write + Seek>(
+        &self,
+        f: &mut T,
+        bytes: &[u8],
+        offset_sectors: u64,
+    ) -> io::Result<()> {
         f.seek(SeekFrom::Start(self.offset_sector_bytes(offset_sectors)))?;
         f.write_all(bytes)
     }
 
     /// Attempts to write a given amount of extended boot sectors at the specified offset (given in
     /// sectors). Returns the buffer of the extended boot sector.
-    fn write_extended(
+    fn write_extended<T: Write + Seek>(
         &self,
-        f: &mut File,
+        f: &mut T,
         offset_sectors: u64,
         amount: u64,
     ) -> io::Result<Vec<u32>> {
@@ -308,9 +320,9 @@ impl Formatter {
     }
 
     /// Attempts to write the checksum sector
-    fn write_checksum(
+    fn write_checksum<T: Write + Seek>(
         &self,
-        f: &mut File,
+        f: &mut T,
         checksum: Checksum,
         offset_sectors: u64,
     ) -> io::Result<()> {
