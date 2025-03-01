@@ -30,11 +30,6 @@ pub const EXTENDED_BOOT: u64 = 8;
 /// First usable cluster index of the cluster heap
 pub const FIRST_USABLE_CLUSTER_INDEX: u32 = 2;
 
-pub mod checksum;
-pub mod fat;
-pub mod format;
-pub mod sector;
-
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug)]
 pub struct DirEntry([u8; 32]); // todo: proper implementation
@@ -66,23 +61,5 @@ impl VolumeSerialNumber {
     pub fn try_new() -> Result<VolumeSerialNumber, SystemTimeError> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         Ok(VolumeSerialNumber((now.as_secs() as u32).to_le()))
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct FormatOptions {
-    pub pack_bitmap: bool,
-    pub full_format: bool,
-    /// Size of the target device (in bytes)
-    pub dev_size: u64,
-}
-
-impl FormatOptions {
-    pub fn new(pack_bitmap: bool, full_format: bool, dev_size: u64) -> FormatOptions {
-        Self {
-            pack_bitmap,
-            full_format,
-            dev_size,
-        }
     }
 }

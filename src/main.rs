@@ -1,6 +1,6 @@
 use std::fs::OpenOptions;
 
-use boot::{format::Formatter, FormatOptions};
+use format::{FormatOptions, Formatter};
 
 const GB: u32 = 1024 * 1024 * 1024;
 const MB: u32 = 1024 * 1024;
@@ -8,9 +8,9 @@ const KB: u16 = 1024;
 
 const DEFAULT_BOUNDARY_ALIGNEMENT: u32 = 1024 * 1024;
 
-pub mod boot;
 pub mod disk;
 pub mod error;
+pub mod format;
 
 pub struct ExFat;
 

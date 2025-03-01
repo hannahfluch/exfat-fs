@@ -1,8 +1,8 @@
 use std::io::{self, Seek, SeekFrom, Write};
 
-use crate::boot::FIRST_USABLE_CLUSTER_INDEX;
+use super::util::FIRST_USABLE_CLUSTER_INDEX;
 
-use super::format::Formatter;
+use super::Formatter;
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug)]
@@ -83,7 +83,7 @@ impl Formatter {
 
 #[test]
 fn small_fat_creation() {
-    use crate::boot::FormatOptions;
+    use super::FormatOptions;
 
     let size: u64 = 32 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
@@ -106,7 +106,7 @@ fn small_fat_creation() {
 
 #[test]
 fn medium_fat_creation() {
-    use crate::boot::FormatOptions;
+    use super::FormatOptions;
 
     let size: u64 = 512 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);

@@ -1,20 +1,38 @@
 use std::{
-    io::{self, Seek, SeekFrom, Write},
+    io::{Seek, SeekFrom, Write},
     ops::{Div, Sub},
 };
 
-use bytemuck::{bytes_of, cast_slice};
 use checked_num::CheckedU64;
-
-use crate::{disk, error::ExFatError};
-
-use super::{
-    checksum::Checksum, sector::BootSector, DirEntry, FileSystemRevision, FormatOptions,
-    VolumeSerialNumber, BACKUP_BOOT_OFFSET, EXTENDED_BOOT, EXTENDED_BOOT_SIGNATURE,
+use util::{
+    DirEntry, FileSystemRevision, VolumeSerialNumber, BACKUP_BOOT_OFFSET,
     FIRST_USABLE_CLUSTER_INDEX, MAIN_BOOT_OFFSET, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE,
     UPCASE_TABLE_SIZE_BYTES,
 };
 
+use crate::{disk, error::ExFatError};
+
+pub mod boot_sector;
+pub mod fat;
+pub mod util;
+
+#[derive(Copy, Clone, Debug)]
+pub struct FormatOptions {
+    pub pack_bitmap: bool,
+    pub full_format: bool,
+    /// Size of the target device (in bytes)
+    pub dev_size: u64,
+}
+
+impl FormatOptions {
+    pub fn new(pack_bitmap: bool, full_format: bool, dev_size: u64) -> FormatOptions {
+        Self {
+            pack_bitmap,
+            full_format,
+            dev_size,
+        }
+    }
+}
 #[derive(Copy, Clone, Debug)]
 pub struct Formatter {
     pub(super) partition_offset: u64,
@@ -247,154 +265,4 @@ impl Formatter {
         self.write_fat(f)?;
         Ok(())
     }
-
-    /// Attempts to write a boot region to a disk at the specified sector offet.
-    fn write_boot_region<T: Write + Seek>(
-        &self,
-        f: &mut T,
-        mut offset_sectors: u64,
-    ) -> io::Result<()> {
-        let mut checksum = Checksum::new(self.bytes_per_sector);
-
-        let boot_sector = BootSector::new(self);
-
-        // write boot sector
-        let bytes = bytes_of(&boot_sector);
-        self.write_sector(f, bytes, offset_sectors)?;
-        checksum.boot_sector(bytes);
-        offset_sectors += 1;
-
-        // write extended boot sectors
-        let bytes = self.write_extended(f, offset_sectors, EXTENDED_BOOT)?;
-        checksum.extended_boot_sector(cast_slice(&bytes), EXTENDED_BOOT);
-        offset_sectors += EXTENDED_BOOT;
-
-        // write oem sector (unused so entirely empty)
-        // todo: add flash/custom parameter support
-        disk::write_zeroes(
-            f,
-            self.bytes_per_sector as u64,
-            self.offset_sector_bytes(offset_sectors),
-        )?;
-        checksum.zero_sector();
-        offset_sectors += 1;
-
-        // write reserved sector
-        disk::write_zeroes(
-            f,
-            self.bytes_per_sector as u64,
-            self.offset_sector_bytes(offset_sectors),
-        )?;
-        checksum.zero_sector();
-        offset_sectors += 1;
-
-        // checksum sector
-        self.write_checksum(f, checksum, offset_sectors)?;
-
-        Ok(())
-    }
-
-    /// Attempts to write a single sector at the specified offset (given in sectors).
-    fn write_sector<T: Write + Seek>(
-        &self,
-        f: &mut T,
-        bytes: &[u8],
-        offset_sectors: u64,
-    ) -> io::Result<()> {
-        f.seek(SeekFrom::Start(self.offset_sector_bytes(offset_sectors)))?;
-        f.write_all(bytes)
-    }
-
-    /// Attempts to write a given amount of extended boot sectors at the specified offset (given in
-    /// sectors). Returns the buffer of the extended boot sector.
-    fn write_extended<T: Write + Seek>(
-        &self,
-        f: &mut T,
-        offset_sectors: u64,
-        amount: u64,
-    ) -> io::Result<Vec<u32>> {
-        f.seek(SeekFrom::Start(self.offset_sector_bytes(offset_sectors)))?;
-
-        let buffer_len = self.bytes_per_sector as usize / 4;
-        let mut buffer = vec![0; buffer_len];
-
-        buffer[buffer_len - 1] = EXTENDED_BOOT_SIGNATURE.to_le();
-
-        for i in 0..amount {
-            let sector_offset = offset_sectors + i;
-            self.write_sector(f, cast_slice(&buffer), sector_offset)?;
-        }
-
-        Ok(buffer)
-    }
-
-    /// Attempts to write the checksum sector
-    fn write_checksum<T: Write + Seek>(
-        &self,
-        f: &mut T,
-        checksum: Checksum,
-        offset_sectors: u64,
-    ) -> io::Result<()> {
-        f.seek(SeekFrom::Start(self.offset_sector_bytes(offset_sectors)))?;
-
-        let checksum = checksum.get();
-
-        let buffer_len = self.bytes_per_sector as usize / 4;
-        let mut buffer = vec![0u32; buffer_len];
-
-        for i in buffer.iter_mut() {
-            *i = checksum;
-        }
-
-        self.write_sector(f, cast_slice(&buffer), offset_sectors)?;
-
-        Ok(())
-    }
-
-    /// Offset in bytes until the given sector index.
-    fn offset_sector_bytes(&self, sector_index: u64) -> u64 {
-        self.bytes_per_sector as u64 * sector_index
-    }
-}
-
-#[test]
-fn boot_region() {
-    use crate::FormatOptions;
-    use std::io::Read;
-
-    let size: u64 = 32 * crate::MB as u64;
-    let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
-    let bytes_per_sector = 512;
-    let bytes_per_cluster = 4 * crate::KB as u32;
-
-    let mut formatter = Formatter::try_new(
-        0,
-        bytes_per_sector,
-        bytes_per_cluster,
-        size,
-        crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        FormatOptions::new(false, false, size),
-    )
-    .unwrap();
-    formatter.write(&mut f).unwrap();
-
-    let offset_main_checksum_bytes = 11 * bytes_per_sector as u64;
-    let offset_backup_checksum_bytes = 23 * bytes_per_sector as u64;
-
-    // assert checksum is the same for main boot region and backup boot region
-    let mut read_main = vec![0u8; 8];
-    f.seek(std::io::SeekFrom::Start(offset_main_checksum_bytes))
-        .unwrap();
-    f.read_exact(&mut read_main).unwrap();
-
-    let mut read_backup = vec![0u8; 8];
-
-    f.seek(std::io::SeekFrom::Start(offset_backup_checksum_bytes))
-        .unwrap();
-    f.read_exact(&mut read_backup).unwrap();
-
-    assert_eq!(
-        read_backup, read_main,
-        "checksum of main and backup boot region must be equal"
-    );
 }
