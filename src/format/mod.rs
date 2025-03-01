@@ -1,8 +1,9 @@
 use std::{
-    io::{Seek, SeekFrom, Write},
+    io::{self, Seek, SeekFrom, Write},
     ops::{Div, Sub},
 };
 
+use bytemuck::cast_slice;
 use checked_num::CheckedU64;
 use util::{
     DirEntry, FileSystemRevision, VolumeSerialNumber, BACKUP_BOOT_OFFSET,
@@ -50,6 +51,7 @@ pub struct Formatter {
     pub(super) number_of_fats: u8,
     pub(super) uptable_length_bytes: u32,
     pub(super) bitmap_length_bytes: u32,
+    pub(super) bitmap_offset_bytes: u32,
     pub(super) bytes_per_sector: u16,
     pub(super) bytes_per_cluster: u32,
     pub(super) size: u64,
@@ -227,6 +229,7 @@ impl Formatter {
             uptable_length_bytes,
             root_length_bytes,
             cluster_count_used,
+            bitmap_offset_bytes,
         })
     }
 
@@ -263,6 +266,38 @@ impl Formatter {
 
         // write fat
         self.write_fat(f)?;
+
+        // write bitmap
+        self.write_bitmap(f)?;
         Ok(())
+    }
+}
+
+impl Formatter {
+    fn write_bitmap<T: Write + Seek>(&self, device: &mut T) -> io::Result<()> {
+        let mut bitmap = vec![0u8; self.bitmap_length_bytes as usize];
+
+        // number of currently completely used bytes (set to 0xff)
+        let full_bytes = self.cluster_count_used / 8;
+        // remaining clusters that don't fully complete a byte
+        let remaining_bits = self.cluster_count_used % 8;
+
+        // offset to the first byte that can be fully used (set to 0x00)
+        let mut zero_offset = full_bytes;
+
+        bitmap[..full_bytes as usize].fill(0xff);
+
+        // set the remaining bits
+        if remaining_bits != 0 {
+            bitmap[full_bytes as usize] = (1 << remaining_bits) - 1;
+            zero_offset += 1;
+        }
+
+        if zero_offset < self.bitmap_length_bytes {
+            bitmap[(zero_offset as usize)..].fill(0);
+        }
+
+        device.seek(SeekFrom::Start(self.bitmap_offset_bytes as u64))?;
+        device.write_all(cast_slice(&bitmap))
     }
 }
