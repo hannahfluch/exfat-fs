@@ -17,8 +17,7 @@ pub const MAX_CLUSTER_SIZE: u32 = 32 * MB;
 pub const SECTOR_SIZE: u64 = 0x1000;
 pub const BOUNDARY_ALIGN: u64 = 1024 * 1024;
 
-pub const FIRST_CLUSTER_INDEX: u8 = 2;
-pub const UPCASE_TABLE_SIZE_BYTES: u16 = 5836;
+pub const UPCASE_TABLE_SIZE_BYTES: u32 = 5836;
 pub const DRIVE_SELECT: u8 = 0x80;
 /// Signature of regular boot sector
 pub const BOOT_SIGNATURE: u16 = 0xAA55;
@@ -28,9 +27,17 @@ pub const EXTENDED_BOOT_SIGNATURE: u32 = 0xAA550000;
 /// Number of extended boot sectors per boot region
 pub const EXTENDED_BOOT: u64 = 8;
 
+/// First usable cluster index of the cluster heap
+pub const FIRST_USABLE_CLUSTER_INDEX: u32 = 2;
+
 pub mod checksum;
+pub mod fat;
 pub mod format;
 pub mod sector;
+
+#[repr(transparent)]
+#[derive(Copy, Clone, Debug)]
+pub struct DirEntry([u8; 32]); // todo: proper implementation
 
 /// Structure representing the file system revision.
 #[repr(C)]

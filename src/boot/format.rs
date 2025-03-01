@@ -9,9 +9,10 @@ use checked_num::CheckedU64;
 use crate::{disk, error::ExFatError};
 
 use super::{
-    checksum::Checksum, sector::BootSector, FileSystemRevision, FormatOptions, VolumeSerialNumber,
-    BACKUP_BOOT_OFFSET, EXTENDED_BOOT, EXTENDED_BOOT_SIGNATURE, FIRST_CLUSTER_INDEX,
-    MAIN_BOOT_OFFSET, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE, UPCASE_TABLE_SIZE_BYTES,
+    checksum::Checksum, sector::BootSector, DirEntry, FileSystemRevision, FormatOptions,
+    VolumeSerialNumber, BACKUP_BOOT_OFFSET, EXTENDED_BOOT, EXTENDED_BOOT_SIGNATURE,
+    FIRST_USABLE_CLUSTER_INDEX, MAIN_BOOT_OFFSET, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE,
+    UPCASE_TABLE_SIZE_BYTES,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -22,21 +23,22 @@ pub struct Formatter {
     pub(super) fat_length: u32,
     pub(super) cluster_heap_offset: u32,
     pub(super) cluster_count: u32,
+    pub(super) cluster_count_used: u32,
     pub(super) first_cluster_of_root_directory: u32,
     pub(super) file_system_revision: FileSystemRevision,
     pub(super) volume_flags: u16,
     pub(super) bytes_per_sector_shift: u8,
     pub(super) sectors_per_cluster_shift: u8,
     pub(super) number_of_fats: u8,
-    pub(super) uptable_offset_bytes: u32,
-    pub(super) bitmap_offset_bytes: u32,
+    pub(super) uptable_length_bytes: u32,
+    pub(super) bitmap_length_bytes: u32,
     pub(super) bytes_per_sector: u16,
     pub(super) bytes_per_cluster: u32,
     pub(super) size: u64,
-    pub(super) boundary_align: u32,
     pub(super) volume_serial_number: VolumeSerialNumber,
     pub(super) root_offset_bytes: u32,
     pub(super) format_options: FormatOptions,
+    pub(super) root_length_bytes: u32,
 }
 
 impl Formatter {
@@ -169,10 +171,10 @@ impl Formatter {
         let cluster_length = bitmap_length_bytes.next_multiple_of(bytes_per_cluster);
 
         let uptable_offset_bytes = bitmap_offset_bytes + cluster_length;
-        let uptable_start_cluster = FIRST_CLUSTER_INDEX as u32 + cluster_length / bytes_per_cluster;
+        let uptable_start_cluster = FIRST_USABLE_CLUSTER_INDEX + cluster_length / bytes_per_cluster;
         let uptable_length_bytes = UPCASE_TABLE_SIZE_BYTES;
 
-        let cluster_length = (uptable_length_bytes as u32).next_multiple_of(bytes_per_cluster);
+        let cluster_length = uptable_length_bytes.next_multiple_of(bytes_per_cluster);
 
         let root_offset_bytes = uptable_offset_bytes + cluster_length;
         let first_cluster_of_root_directory =
@@ -180,6 +182,10 @@ impl Formatter {
 
         let file_system_revision = FileSystemRevision::default();
         let volume_serial_number = VolumeSerialNumber::try_new()?;
+
+        let root_length_bytes = size_of::<DirEntry>() as u32 * 3;
+        let cluster_count_used = 0; // in the beginning no cluster is used
+
         Ok(Self {
             partition_offset,
             volume_length,
@@ -194,20 +200,21 @@ impl Formatter {
             volume_flags,
             volume_serial_number,
             file_system_revision,
-            bitmap_offset_bytes,
-            uptable_offset_bytes,
             size,
             bytes_per_cluster,
             bytes_per_sector,
-            boundary_align,
             root_offset_bytes,
             format_options,
+            bitmap_length_bytes,
+            uptable_length_bytes,
+            root_length_bytes,
+            cluster_count_used,
         })
     }
 
-    /// Attempts to write the boot region onto the device. The file length must be the same as the
+    /// Attempts to write the boot region & FAT onto the device. The file length must be the same as the
     /// provided `dev_size` in the [`Formatter`].
-    pub fn write<T: Write + Seek>(&self, f: &mut T) -> Result<(), ExFatError> {
+    pub fn write<T: Write + Seek>(&mut self, f: &mut T) -> Result<(), ExFatError> {
         let old_pos = f.stream_position()?;
         let len = f.seek(SeekFrom::End(0))?;
 
@@ -236,6 +243,8 @@ impl Formatter {
         // write backup boot region
         self.write_boot_region(f, BACKUP_BOOT_OFFSET)?;
 
+        // write fat
+        self.write_fat(f)?;
         Ok(())
     }
 
@@ -350,6 +359,7 @@ impl Formatter {
 
 #[test]
 fn boot_region() {
+    use crate::FormatOptions;
     use std::io::Read;
 
     let size: u64 = 32 * crate::MB as u64;
@@ -357,7 +367,7 @@ fn boot_region() {
     let bytes_per_sector = 512;
     let bytes_per_cluster = 4 * crate::KB as u32;
 
-    let formatter = Formatter::try_new(
+    let mut formatter = Formatter::try_new(
         0,
         bytes_per_sector,
         bytes_per_cluster,

@@ -26,7 +26,7 @@ fn main() {
         128 * KB
     } as u32;
 
-    let formatter = Formatter::try_new(
+    let mut formatter = Formatter::try_new(
         0,
         bytes_per_sector,
         cluster_size,
