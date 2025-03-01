@@ -15,6 +15,7 @@ use crate::{disk, error::ExFatError};
 
 pub mod boot_sector;
 pub mod fat;
+pub mod upcase_table;
 pub mod util;
 
 #[derive(Copy, Clone, Debug)]
@@ -59,6 +60,7 @@ pub struct Formatter {
     pub(super) root_offset_bytes: u32,
     pub(super) format_options: FormatOptions,
     pub(super) root_length_bytes: u32,
+    pub(super) uptable_offset_bytes: u32,
 }
 
 impl Formatter {
@@ -230,6 +232,7 @@ impl Formatter {
             root_length_bytes,
             cluster_count_used,
             bitmap_offset_bytes,
+            uptable_offset_bytes,
         })
     }
 
@@ -269,6 +272,9 @@ impl Formatter {
 
         // write bitmap
         self.write_bitmap(f)?;
+
+        // write uptable
+        self.write_upcase_table(f)?;
         Ok(())
     }
 }
