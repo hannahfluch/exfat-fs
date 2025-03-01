@@ -133,7 +133,7 @@ impl BootSector {
             volume_flags: meta.volume_flags.to_le(),
             file_system_revision: meta.file_system_revision,
             drive_select: DRIVE_SELECT,
-            percent_in_use: 0,
+            percent_in_use: 0xFF, // not currently supported
             _reserved2: [0; 7],
             boot_code: [0xF4; 390],
             boot_signature: BOOT_SIGNATURE,
