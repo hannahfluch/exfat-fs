@@ -376,7 +376,7 @@ impl Formatter {
 
 #[test]
 fn small_format() {
-    use super::{FormatOptions, Label};
+    use crate::format::{FormatOptions, Label};
     use std::io::Read;
 
     let size: u64 = 32 * crate::MB as u64;

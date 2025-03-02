@@ -1,12 +1,7 @@
 use std::fs::OpenOptions;
 
+use exfat::{DEFAULT_BOUNDARY_ALIGNEMENT, GB, KB, MB};
 use format::{FormatOptions, Formatter, Label};
-
-const GB: u32 = 1024 * 1024 * 1024;
-const MB: u32 = 1024 * 1024;
-const KB: u16 = 1024;
-
-const DEFAULT_BOUNDARY_ALIGNEMENT: u32 = 1024 * 1024;
 
 pub mod dir;
 pub mod disk;
