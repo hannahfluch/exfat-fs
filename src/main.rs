@@ -1,6 +1,6 @@
 use std::fs::OpenOptions;
 
-use format::{FormatOptions, Formatter};
+use format::{FormatOptions, Formatter, Label};
 
 const GB: u32 = 1024 * 1024 * 1024;
 const MB: u32 = 1024 * 1024;
@@ -8,6 +8,7 @@ const KB: u16 = 1024;
 
 const DEFAULT_BOUNDARY_ALIGNEMENT: u32 = 1024 * 1024;
 
+pub mod dir;
 pub mod disk;
 pub mod error;
 pub mod format;
@@ -15,7 +16,7 @@ pub mod format;
 pub struct ExFat;
 
 fn main() {
-    let size: u64 = 256 * MB as u64;
+    let size: u64 = 32 * MB as u64;
     let bytes_per_sector = 512;
     // default cluster size based on sector size
     let cluster_size = if size <= 256 * MB as u64 {
@@ -32,7 +33,7 @@ fn main() {
         cluster_size,
         size,
         DEFAULT_BOUNDARY_ALIGNEMENT,
-        FormatOptions::new(false, false, size),
+        FormatOptions::new(false, false, size, Label::new("Hello".to_string()).unwrap()),
     )
     .unwrap();
 

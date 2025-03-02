@@ -9,6 +9,9 @@ impl Formatter {
     }
 }
 
+/// Default UPCASE Table CHECKSUM from: [exfatprogs](`https://github.com/exfatprogs/exfatprogs`)
+pub static DEFAULT_UPCASE_TABLE_CHECKSUM: u32 = 0xe619d30d;
+
 /// Default UPCASE Table from: [exfatprogs](`https://github.com/exfatprogs/exfatprogs`)
 pub static DEFAULT_UPCASE_TABLE: [u8; UPCASE_TABLE_SIZE_BYTES as usize] = [
     0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x05, 0x00, 0x06, 0x00, 0x07, 0x00,

@@ -315,7 +315,7 @@ fn small_simple() {
         bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        super::FormatOptions::new(false, false, size),
+        super::FormatOptions::new(false, false, size, super::Label::default()),
     )
     .unwrap();
 
@@ -346,7 +346,7 @@ fn small_pack_bitmap() {
         bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        super::FormatOptions::new(true, false, size),
+        super::FormatOptions::new(true, false, size, super::Label::default()),
     )
     .unwrap();
 
@@ -377,7 +377,7 @@ fn big_simple() {
         bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        super::FormatOptions::new(false, false, size),
+        super::FormatOptions::new(false, false, size, super::Label::default()),
     )
     .unwrap();
 
@@ -397,7 +397,7 @@ fn big_simple() {
 
 #[test]
 fn boot_region() {
-    use super::FormatOptions;
+    use super::{FormatOptions, Label};
     use std::io::Read;
 
     let size: u64 = 32 * crate::MB as u64;
@@ -411,7 +411,7 @@ fn boot_region() {
         bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        FormatOptions::new(false, false, size),
+        FormatOptions::new(false, false, size, Label::default()),
     )
     .unwrap();
     formatter.write(&mut f).unwrap();

@@ -30,10 +30,6 @@ pub const EXTENDED_BOOT: u64 = 8;
 /// First usable cluster index of the cluster heap
 pub const FIRST_USABLE_CLUSTER_INDEX: u32 = 2;
 
-#[repr(transparent)]
-#[derive(Copy, Clone, Debug)]
-pub struct DirEntry([u8; 32]); // todo: proper implementation
-
 /// Structure representing the file system revision.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]

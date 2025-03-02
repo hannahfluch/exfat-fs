@@ -83,7 +83,7 @@ impl Formatter {
 
 #[test]
 fn small_fat_creation() {
-    use super::FormatOptions;
+    use super::{FormatOptions, Label};
 
     let size: u64 = 32 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
@@ -96,7 +96,7 @@ fn small_fat_creation() {
         bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        FormatOptions::new(false, false, size),
+        FormatOptions::new(false, false, size, Label::default()),
     )
     .unwrap();
     formatter.write(&mut f).unwrap();
@@ -106,7 +106,7 @@ fn small_fat_creation() {
 
 #[test]
 fn medium_fat_creation() {
-    use super::FormatOptions;
+    use super::{FormatOptions, Label};
 
     let size: u64 = 512 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
@@ -119,7 +119,7 @@ fn medium_fat_creation() {
         bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        FormatOptions::new(false, false, size),
+        FormatOptions::new(false, false, size, Label::default()),
     )
     .unwrap();
     formatter.write(&mut f).unwrap();

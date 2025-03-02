@@ -3,12 +3,15 @@ use std::{
     ops::{Div, Sub},
 };
 
+use crate::dir::{
+    BitmapEntry, DirEntry, UpcaseTableEntry, VolumeGuidEntry, VolumeLabelEntry,
+    VOLUME_GUID_ENTRY_TYPE,
+};
 use bytemuck::cast_slice;
 use checked_num::CheckedU64;
 use util::{
-    DirEntry, FileSystemRevision, VolumeSerialNumber, BACKUP_BOOT_OFFSET,
-    FIRST_USABLE_CLUSTER_INDEX, MAIN_BOOT_OFFSET, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE,
-    UPCASE_TABLE_SIZE_BYTES,
+    FileSystemRevision, VolumeSerialNumber, BACKUP_BOOT_OFFSET, FIRST_USABLE_CLUSTER_INDEX,
+    MAIN_BOOT_OFFSET, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE, UPCASE_TABLE_SIZE_BYTES,
 };
 
 use crate::{disk, error::ExFatError};
@@ -24,15 +27,46 @@ pub struct FormatOptions {
     pub full_format: bool,
     /// Size of the target device (in bytes)
     pub dev_size: u64,
+    pub label: Label,
+    pub guid: Option<u128>,
+}
+
+/// A UTF16 encoded volume label. The length must not exceed 11 characters.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct Label(pub(crate) [u8; 22], pub(crate) u8);
+
+impl Label {
+    pub fn new(label: String) -> Option<Label> {
+        let len = label.len();
+        if len > 11 {
+            None
+        } else {
+            let mut utf16_bytes = [0u8; 22];
+
+            let encoded: Vec<u8> = label.encode_utf16().flat_map(|x| x.to_le_bytes()).collect();
+
+            let copy_len = encoded.len();
+            assert!(copy_len <= 22);
+            utf16_bytes[..copy_len].copy_from_slice(&encoded[..copy_len]);
+
+            Some(Label(utf16_bytes, len as u8))
+        }
+    }
 }
 
 impl FormatOptions {
-    pub fn new(pack_bitmap: bool, full_format: bool, dev_size: u64) -> FormatOptions {
+    pub fn new(pack_bitmap: bool, full_format: bool, dev_size: u64, label: Label) -> FormatOptions {
         Self {
             pack_bitmap,
             full_format,
             dev_size,
+            label,
+            guid: None,
         }
+    }
+
+    pub fn set_guid(&mut self, guid: u128) {
+        self.guid = Some(guid);
     }
 }
 #[derive(Copy, Clone, Debug)]
@@ -61,6 +95,7 @@ pub struct Formatter {
     pub(super) format_options: FormatOptions,
     pub(super) root_length_bytes: u32,
     pub(super) uptable_offset_bytes: u32,
+    pub(super) uptable_start_cluster: u32,
 }
 
 impl Formatter {
@@ -233,6 +268,7 @@ impl Formatter {
             cluster_count_used,
             bitmap_offset_bytes,
             uptable_offset_bytes,
+            uptable_start_cluster,
         })
     }
 
@@ -275,6 +311,9 @@ impl Formatter {
 
         // write uptable
         self.write_upcase_table(f)?;
+
+        // write root directory
+        self.write_root_dir(f)?;
         Ok(())
     }
 }
@@ -306,4 +345,119 @@ impl Formatter {
         device.seek(SeekFrom::Start(self.bitmap_offset_bytes as u64))?;
         device.write_all(cast_slice(&bitmap))
     }
+
+    fn write_root_dir<T: Write + Seek>(&self, device: &mut T) -> io::Result<()> {
+        // create volume label entry
+        let vol_label = DirEntry::VolumeLabel(VolumeLabelEntry::new(self.format_options.label));
+
+        // create volume GUID entry
+        let vol_guid = if let Some(guid) = self.format_options.guid {
+            DirEntry::VolumeGuid(VolumeGuidEntry::new(guid))
+        } else {
+            DirEntry::unused(VOLUME_GUID_ENTRY_TYPE)
+        };
+
+        // create bitmap entry
+        let bitmap = DirEntry::Bitmap(BitmapEntry::new(self.bitmap_length_bytes as u64));
+
+        // create upcase table entry
+        let uptable = DirEntry::UpcaseTable(UpcaseTableEntry::new(self.uptable_start_cluster));
+
+        let bytes = [vol_label, vol_guid, bitmap, uptable]
+            .into_iter()
+            .flat_map(|b| b.bytes())
+            .collect::<Vec<u8>>();
+
+        device.seek(SeekFrom::Start(self.root_offset_bytes as u64))?;
+        device.write_all(&bytes)?;
+        Ok(())
+    }
+}
+
+#[test]
+fn small_format() {
+    use super::{FormatOptions, Label};
+    use std::io::Read;
+
+    let size: u64 = 32 * crate::MB as u64;
+    let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
+    let bytes_per_sector = 512;
+    let bytes_per_cluster = 4 * crate::KB as u32;
+
+    let label = Label::new("Hello".to_string()).expect("label creation failed");
+
+    let mut formatter = Formatter::try_new(
+        0,
+        bytes_per_sector,
+        bytes_per_cluster,
+        size,
+        crate::DEFAULT_BOUNDARY_ALIGNEMENT,
+        FormatOptions::new(false, false, size, label),
+    )
+    .expect("formatting failed");
+    formatter.write(&mut f).expect("writing failed");
+
+    let offset_volume_label_entry_bytes = 0x203000;
+    let mut read_buffer = vec![0u8; 32];
+    f.seek(std::io::SeekFrom::Start(offset_volume_label_entry_bytes))
+        .unwrap();
+    f.read_exact(&mut read_buffer).unwrap();
+
+    // assert volume label root directory entry is at the expected offset
+    let vol_label_entry_type = read_buffer[0];
+    assert_eq!(
+        vol_label_entry_type, 0x83,
+        "Volume Label Root Directory Entry has invalid type"
+    );
+
+    // assert volume label length is correct
+    let vol_label_length = read_buffer[1];
+    assert_eq!(
+        vol_label_length, 5,
+        "Volume Label Root Directory Entry has invalid label length"
+    );
+
+    // assert volume label data is correct
+    assert_eq!(
+        &read_buffer[2..2 + vol_label_length as usize],
+        &label.0[..vol_label_length as usize],
+        "Volume Label Root Directory Entry has invalid data"
+    );
+    let offset_upcase_table_entry_bytes = 0x203060;
+
+    f.seek(std::io::SeekFrom::Start(offset_upcase_table_entry_bytes))
+        .unwrap();
+    f.read_exact(&mut read_buffer).unwrap();
+
+    // assert upcase table root directory entry is at the expected offset
+    assert_eq!(
+        read_buffer[0], 0x82,
+        "Upcase Table Root Directory Entry has invalid type"
+    );
+
+    // assert upcase table root directory entry checksum is correct
+    assert_eq!(
+        u32::from_le_bytes(read_buffer[4..8].try_into().unwrap()),
+        0xe619d30d,
+        "Upcase Table Root Directory Entry has invalid checksum"
+    );
+
+    let offset_bitmap_entry_bytes = 0x203040;
+
+    f.seek(std::io::SeekFrom::Start(offset_bitmap_entry_bytes))
+        .unwrap();
+    f.read_exact(&mut read_buffer).unwrap();
+
+    // assert bitmap root directory entry is at the expected offset
+    assert_eq!(
+        read_buffer[0], 0x81,
+        "Allocation Bitmap Root Directory Entry has invalid type"
+    );
+
+    // assert bitmap root directory entry is of the expected size
+    assert_eq!(
+        &read_buffer[24..],
+        960u64.to_le_bytes(),
+        "Allocation Bitmap Root Directory Entry has invalid size"
+    );
 }
