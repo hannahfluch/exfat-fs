@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 bytemuck = { version = "1.21.0", features = ["derive", "min_const_generics"] }
-checked_num =  { git = "https://github.com/Benstoy/checked_num" } # todo: change this to version
+checked_num = "0.1.3"
 thiserror = "2.0.11"
