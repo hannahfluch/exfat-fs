@@ -4,14 +4,14 @@ use std::{
 };
 
 use crate::dir::{
-    BitmapEntry, DirEntry, UpcaseTableEntry, VolumeGuidEntry, VolumeLabelEntry,
-    VOLUME_GUID_ENTRY_TYPE,
+    BitmapEntry, DirEntry, UpcaseTableEntry, VOLUME_GUID_ENTRY_TYPE, VolumeGuidEntry,
+    VolumeLabelEntry,
 };
 use bytemuck::cast_slice;
 use checked_num::CheckedU64;
 use util::{
-    FileSystemRevision, VolumeSerialNumber, BACKUP_BOOT_OFFSET, FIRST_USABLE_CLUSTER_INDEX,
-    MAIN_BOOT_OFFSET, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE, UPCASE_TABLE_SIZE_BYTES,
+    BACKUP_BOOT_OFFSET, FIRST_USABLE_CLUSTER_INDEX, FileSystemRevision, MAIN_BOOT_OFFSET,
+    MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE, UPCASE_TABLE_SIZE_BYTES, VolumeSerialNumber,
 };
 
 use crate::{disk, error::ExFatError};

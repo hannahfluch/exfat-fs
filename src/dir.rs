@@ -4,9 +4,9 @@
 use std::mem::transmute;
 
 use crate::format::{
+    Label,
     upcase_table::{DEFAULT_UPCASE_TABLE, DEFAULT_UPCASE_TABLE_CHECKSUM},
     util::FIRST_USABLE_CLUSTER_INDEX,
-    Label,
 };
 
 pub const VOLUME_GUID_ENTRY_TYPE: u8 = 0xA0;
