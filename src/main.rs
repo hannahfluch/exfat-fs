@@ -13,19 +13,10 @@ pub struct ExFat;
 fn main() {
     let size: u64 = 32 * MB as u64;
     let bytes_per_sector = 512;
-    // default cluster size based on sector size
-    let cluster_size = if size <= 256 * MB as u64 {
-        4 * KB
-    } else if size <= 32 * GB as u64 {
-        32 * KB
-    } else {
-        128 * KB
-    } as u32;
 
     let mut formatter = Formatter::try_new(
         0,
         bytes_per_sector,
-        cluster_size,
         size,
         DEFAULT_BOUNDARY_ALIGNEMENT,
         FormatOptions::new(false, false, size, Label::new("Hello".to_string()).unwrap()),

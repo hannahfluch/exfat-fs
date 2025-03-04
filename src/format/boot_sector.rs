@@ -1,15 +1,15 @@
 use std::io::{self, Seek, SeekFrom, Write};
 
-use bytemuck::{bytes_of, cast_slice, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable, bytes_of, cast_slice};
 
 use crate::disk;
 
 use super::{
-    util::{
-        FileSystemRevision, VolumeSerialNumber, BOOT_SIGNATURE, DRIVE_SELECT, EXTENDED_BOOT,
-        EXTENDED_BOOT_SIGNATURE,
-    },
     Formatter,
+    util::{
+        BOOT_SIGNATURE, DRIVE_SELECT, EXTENDED_BOOT, EXTENDED_BOOT_SIGNATURE, FileSystemRevision,
+        VolumeSerialNumber,
+    },
 };
 /// The Main/Backup Boot Sector structure for an exFAT volume.
 /// This structure defines the essential parameters required for the file system.
@@ -307,12 +307,10 @@ impl Formatter {
 fn small_simple() {
     let size: u64 = 256 * crate::MB as u64;
     let bytes_per_sector = 512;
-    let bytes_per_cluster = 4 * crate::KB as u32;
 
     let meta = Formatter::try_new(
         0,
         bytes_per_sector,
-        bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
         super::FormatOptions::new(false, false, size, super::Label::default()),
@@ -338,12 +336,10 @@ fn small_simple() {
 fn small_pack_bitmap() {
     let size: u64 = 256 * crate::MB as u64;
     let bytes_per_sector = 512;
-    let bytes_per_cluster = 4 * crate::KB as u32;
 
     let meta = Formatter::try_new(
         0,
         bytes_per_sector,
-        bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
         super::FormatOptions::new(true, false, size, super::Label::default()),
@@ -369,12 +365,10 @@ fn small_pack_bitmap() {
 fn big_simple() {
     let size: u64 = 5 * crate::GB as u64;
     let bytes_per_sector = 512;
-    let bytes_per_cluster = 32 * crate::KB as u32;
 
     let meta = Formatter::try_new(
         0,
         bytes_per_sector,
-        bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
         super::FormatOptions::new(false, false, size, super::Label::default()),
@@ -403,12 +397,10 @@ fn boot_region() {
     let size: u64 = 32 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
     let bytes_per_sector = 512;
-    let bytes_per_cluster = 4 * crate::KB as u32;
 
     let mut formatter = Formatter::try_new(
         0,
         bytes_per_sector,
-        bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
         FormatOptions::new(false, false, size, Label::default()),
