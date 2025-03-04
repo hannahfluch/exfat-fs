@@ -3,9 +3,12 @@ use std::{
     ops::{Div, Sub},
 };
 
-use crate::dir::{
-    BitmapEntry, DirEntry, UpcaseTableEntry, VOLUME_GUID_ENTRY_TYPE, VolumeGuidEntry,
-    VolumeLabelEntry,
+use crate::{
+    GB, KB, MB,
+    dir::{
+        BitmapEntry, DirEntry, UpcaseTableEntry, VOLUME_GUID_ENTRY_TYPE, VolumeGuidEntry,
+        VolumeLabelEntry,
+    },
 };
 use bytemuck::cast_slice;
 use checked_num::CheckedU64;
@@ -102,7 +105,6 @@ impl Formatter {
     pub fn try_new(
         partition_offset: u64,
         bytes_per_sector: u16,
-        bytes_per_cluster: u32,
         size: u64,
         boundary_align: u32,
         format_options: FormatOptions,
@@ -114,6 +116,8 @@ impl Formatter {
         if !bytes_per_sector.is_power_of_two() || !(512..=4096).contains(&bytes_per_sector) {
             return Err(ExFatError::InvalidBytesPerSector(bytes_per_sector));
         }
+
+        let bytes_per_cluster = default_cluster_size(size);
 
         // format volume with a single FAT
         let number_of_fats = 1u8;
@@ -318,6 +322,21 @@ impl Formatter {
     }
 }
 
+/// default cluster size based on sector size
+fn default_cluster_size(size: u64) -> u32 {
+    const FIRST_BOUND: u64 = 256 * MB as u64;
+    const FROM_FIRST_BOUND: u64 = FIRST_BOUND + 1;
+
+    const SECOND_BOUND: u64 = 32 * GB as u64;
+    const FROM_SECOND_BOUND: u64 = SECOND_BOUND + 1;
+
+    match size {
+        ..=FIRST_BOUND => 4 * KB as u32,
+        FROM_FIRST_BOUND..=SECOND_BOUND => 32 * KB as u32,
+        FROM_SECOND_BOUND.. => 128 * KB as u32,
+    }
+}
+
 impl Formatter {
     fn write_bitmap<T: Write + Seek>(&self, device: &mut T) -> io::Result<()> {
         let mut bitmap = vec![0u8; self.bitmap_length_bytes as usize];
@@ -382,14 +401,12 @@ fn small_format() {
     let size: u64 = 32 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
     let bytes_per_sector = 512;
-    let bytes_per_cluster = 4 * crate::KB as u32;
 
     let label = Label::new("Hello".to_string()).expect("label creation failed");
 
     let mut formatter = Formatter::try_new(
         0,
         bytes_per_sector,
-        bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
         FormatOptions::new(false, false, size, label),

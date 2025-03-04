@@ -88,12 +88,10 @@ fn small_fat_creation() {
     let size: u64 = 32 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
     let bytes_per_sector = 512;
-    let bytes_per_cluster = 4 * crate::KB as u32;
 
     let mut formatter = Formatter::try_new(
         0,
         bytes_per_sector,
-        bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
         FormatOptions::new(false, false, size, Label::default()),
@@ -111,12 +109,10 @@ fn medium_fat_creation() {
     let size: u64 = 512 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
     let bytes_per_sector = 512;
-    let bytes_per_cluster = 32 * crate::KB as u32;
 
     let mut formatter = Formatter::try_new(
         0,
         bytes_per_sector,
-        bytes_per_cluster,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
         FormatOptions::new(false, false, size, Label::default()),
