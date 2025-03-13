@@ -1,8 +1,8 @@
 use std::io::{self, Seek, SeekFrom, Write};
 
-use super::{Formatter, util::UPCASE_TABLE_SIZE_BYTES};
+use super::{util::UPCASE_TABLE_SIZE_BYTES, Exfat};
 
-impl Formatter {
+impl Exfat {
     pub(super) fn write_upcase_table<T: Write + Seek>(&self, device: &mut T) -> io::Result<()> {
         device.seek(SeekFrom::Start(self.uptable_offset_bytes as u64))?;
         device.write_all(&DEFAULT_UPCASE_TABLE)

@@ -1,15 +1,15 @@
 use std::io::{self, Seek, SeekFrom, Write};
 
-use bytemuck::{Pod, Zeroable, bytes_of, cast_slice};
+use bytemuck::{bytes_of, cast_slice, Pod, Zeroable};
 
 use crate::disk;
 
 use super::{
-    Formatter,
     util::{
-        BOOT_SIGNATURE, DRIVE_SELECT, EXTENDED_BOOT, EXTENDED_BOOT_SIGNATURE, FileSystemRevision,
-        VolumeSerialNumber,
+        FileSystemRevision, VolumeSerialNumber, BOOT_SIGNATURE, DRIVE_SELECT, EXTENDED_BOOT,
+        EXTENDED_BOOT_SIGNATURE,
     },
+    Exfat,
 };
 /// The Main/Backup Boot Sector structure for an exFAT volume.
 /// This structure defines the essential parameters required for the file system.
@@ -114,7 +114,7 @@ pub struct BootSector {
 
 impl BootSector {
     /// Creates a new boot sector with a single FAT. All input parameters are given in bytes. (NOT SECTORS!). The offset to the bitmap is also returned.
-    pub fn new(meta: &Formatter) -> BootSector {
+    pub fn new(meta: &Exfat) -> BootSector {
         Self {
             jump_boot: [0xeb, 0x76, 0x90],
             filesystem_name: *b"EXFAT   ",
@@ -193,7 +193,7 @@ impl Checksum {
     }
 }
 
-impl Formatter {
+impl Exfat {
     /// Attempts to write a boot region to a disk at the specified sector offet.
     pub(super) fn write_boot_region<T: Write + Seek>(
         &self,
@@ -308,12 +308,12 @@ fn small_simple() {
     let size: u64 = 256 * crate::MB as u64;
     let bytes_per_sector = 512;
 
-    let meta = Formatter::try_new(
+    let meta = Exfat::try_new(
         0,
         bytes_per_sector,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        super::FormatOptions::new(false, false, size, super::Label::default()),
+        super::FormatVolumeOptions::new(false, false, size, super::Label::default()),
     )
     .unwrap();
 
@@ -337,12 +337,12 @@ fn small_pack_bitmap() {
     let size: u64 = 256 * crate::MB as u64;
     let bytes_per_sector = 512;
 
-    let meta = Formatter::try_new(
+    let meta = Exfat::try_new(
         0,
         bytes_per_sector,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        super::FormatOptions::new(true, false, size, super::Label::default()),
+        super::FormatVolumeOptions::new(true, false, size, super::Label::default()),
     )
     .unwrap();
 
@@ -366,12 +366,12 @@ fn big_simple() {
     let size: u64 = 5 * crate::GB as u64;
     let bytes_per_sector = 512;
 
-    let meta = Formatter::try_new(
+    let meta = Exfat::try_new(
         0,
         bytes_per_sector,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        super::FormatOptions::new(false, false, size, super::Label::default()),
+        super::FormatVolumeOptions::new(false, false, size, super::Label::default()),
     )
     .unwrap();
 
@@ -391,19 +391,19 @@ fn big_simple() {
 
 #[test]
 fn boot_region() {
-    use super::{FormatOptions, Label};
+    use super::{FormatVolumeOptions, Label};
     use std::io::Read;
 
     let size: u64 = 32 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
     let bytes_per_sector = 512;
 
-    let mut formatter = Formatter::try_new(
+    let mut formatter = Exfat::try_new(
         0,
         bytes_per_sector,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        FormatOptions::new(false, false, size, Label::default()),
+        FormatVolumeOptions::new(false, false, size, Label::default()),
     )
     .unwrap();
     formatter.write(&mut f).unwrap();

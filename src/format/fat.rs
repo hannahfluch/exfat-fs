@@ -2,7 +2,7 @@ use std::io::{self, Seek, SeekFrom, Write};
 
 use super::util::FIRST_USABLE_CLUSTER_INDEX;
 
-use super::Formatter;
+use super::Exfat;
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug)]
@@ -20,7 +20,7 @@ impl FatEntry {
     }
 }
 
-impl Formatter {
+impl Exfat {
     pub(super) fn write_fat<T: Write + Seek>(&mut self, device: &mut T) -> io::Result<()> {
         // write entry 0 (media type)
         self.write_fat_entry(device, FatEntry::media_type(), 0)?;
@@ -83,18 +83,18 @@ impl Formatter {
 
 #[test]
 fn small_fat_creation() {
-    use super::{FormatOptions, Label};
+    use super::{FormatVolumeOptions, Label};
 
     let size: u64 = 32 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
     let bytes_per_sector = 512;
 
-    let mut formatter = Formatter::try_new(
+    let mut formatter = Exfat::try_new(
         0,
         bytes_per_sector,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        FormatOptions::new(false, false, size, Label::default()),
+        FormatVolumeOptions::new(false, false, size, Label::default()),
     )
     .unwrap();
     formatter.write(&mut f).unwrap();
@@ -104,18 +104,18 @@ fn small_fat_creation() {
 
 #[test]
 fn medium_fat_creation() {
-    use super::{FormatOptions, Label};
+    use super::{FormatVolumeOptions, Label};
 
     let size: u64 = 512 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
     let bytes_per_sector = 512;
 
-    let mut formatter = Formatter::try_new(
+    let mut formatter = Exfat::try_new(
         0,
         bytes_per_sector,
         size,
         crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        FormatOptions::new(false, false, size, Label::default()),
+        FormatVolumeOptions::new(false, false, size, Label::default()),
     )
     .unwrap();
     formatter.write(&mut f).unwrap();

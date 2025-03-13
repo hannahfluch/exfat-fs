@@ -1,7 +1,7 @@
 use std::{io, time::SystemTimeError};
 
 #[derive(Debug, thiserror::Error)]
-pub enum ExFatError {
+pub enum ExfatError {
     #[error("Invalid bytes per sector. Must be a power of `2` and between `512` and `4096`: {0}.")]
     InvalidBytesPerSector(u16),
     #[error("Invalid volume size: {0}.")]
