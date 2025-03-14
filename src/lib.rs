@@ -5,7 +5,6 @@
 //! ## Usage
 //!
 //! ```rust
-//! # use std::fs::OpenOptions;
 //! use exfat::{
 //!    MB,
 //!    format::{Exfat, FormatVolumeOptionsBuilder, Label},
@@ -26,13 +25,7 @@
 //! let mut formatter = Exfat::try_from(format_options).unwrap();
 //!
 //!
-//! # let mut file = OpenOptions::new()
-//! #   .write(true)
-//! #   .read(true)
-//! #   .create(true)
-//! #   .truncate(false)
-//! #   .open("test")
-//! #   .unwrap();
+//! # let mut file = std::io::Cursor::new(vec![0u8; size as usize]);
 //!
 //!
 //! formatter.write(&mut file).unwrap();
