@@ -1,13 +1,4 @@
-use std::io::{self, Seek, SeekFrom, Write};
-
-use super::{Exfat, util::UPCASE_TABLE_SIZE_BYTES};
-
-impl Exfat {
-    pub(super) fn write_upcase_table<T: Write + Seek>(&self, device: &mut T) -> io::Result<()> {
-        device.seek(SeekFrom::Start(self.uptable_offset_bytes as u64))?;
-        device.write_all(&DEFAULT_UPCASE_TABLE)
-    }
-}
+pub(crate) const UPCASE_TABLE_SIZE_BYTES: u32 = 5836;
 
 /// Default UPCASE Table CHECKSUM from: [exfatprogs](`https://github.com/exfatprogs/exfatprogs`)
 pub(crate) static DEFAULT_UPCASE_TABLE_CHECKSUM: u32 = 0xe619d30d;

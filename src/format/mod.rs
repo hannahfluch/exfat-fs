@@ -4,27 +4,24 @@ use std::{
 };
 
 use crate::{
-    DEFAULT_BOUNDARY_ALIGNEMENT, GB, KB, MB,
+    DEFAULT_BOUNDARY_ALIGNEMENT, FIRST_USABLE_CLUSTER_INDEX, GB, KB, MB,
+    boot_sector::{FileSystemRevision, VolumeSerialNumber},
     dir::{
         BitmapEntry, DirEntry, UpcaseTableEntry, VOLUME_GUID_ENTRY_TYPE, VolumeGuidEntry,
         VolumeLabelEntry,
     },
+    upcase_table::{DEFAULT_UPCASE_TABLE, UPCASE_TABLE_SIZE_BYTES},
 };
+use boot::{BACKUP_BOOT_OFFSET, MAIN_BOOT_OFFSET, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE};
 use bytemuck::cast_slice;
 use checked_num::CheckedU64;
 use derive_builder::Builder;
-use util::{
-    BACKUP_BOOT_OFFSET, FIRST_USABLE_CLUSTER_INDEX, FileSystemRevision, MAIN_BOOT_OFFSET,
-    MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE, UPCASE_TABLE_SIZE_BYTES, VolumeSerialNumber,
-};
 
 use crate::{disk, error::ExfatError};
 
 /// ExFat boot sector creation.
-mod boot_sector;
+mod boot;
 mod fat;
-pub(crate) mod upcase_table;
-pub(super) mod util;
 
 /// A UTF16 encoded volume label. The length must not exceed 11 characters.
 #[derive(Copy, Clone, Debug, Default)]
@@ -362,6 +359,11 @@ fn default_cluster_size(size: u64) -> u32 {
 }
 
 impl Exfat {
+    fn write_upcase_table<T: Write + Seek>(&self, device: &mut T) -> io::Result<()> {
+        device.seek(SeekFrom::Start(self.uptable_offset_bytes as u64))?;
+        device.write_all(&DEFAULT_UPCASE_TABLE)
+    }
+
     fn write_bitmap<T: Write + Seek>(&self, device: &mut T) -> io::Result<()> {
         let mut bitmap = vec![0u8; self.bitmap_length_bytes as usize];
 

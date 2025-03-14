@@ -1,6 +1,6 @@
 use std::io::{self, Seek, SeekFrom, Write};
 
-use super::util::FIRST_USABLE_CLUSTER_INDEX;
+use crate::FIRST_USABLE_CLUSTER_INDEX;
 
 use super::Exfat;
 

@@ -35,6 +35,7 @@
 //! Currently, the crate can only be used to format, but not read/write to the fs. no-std support
 //! is also a work-in-progress.
 
+pub(crate) mod boot_sector;
 /// Directory abstractions
 pub(crate) mod dir;
 /// Disk utility functions
@@ -42,9 +43,12 @@ pub mod disk;
 pub mod error;
 /// Filesystem formatting capabilities
 pub mod format;
+pub(crate) mod upcase_table;
 
 pub const GB: u32 = 1024 * 1024 * 1024;
 pub const MB: u32 = 1024 * 1024;
 pub const KB: u16 = 1024;
 
 pub const DEFAULT_BOUNDARY_ALIGNEMENT: u32 = 1024 * 1024;
+/// First usable cluster index of the cluster heap
+pub(crate) const FIRST_USABLE_CLUSTER_INDEX: u32 = 2;
