@@ -129,6 +129,9 @@ pub struct Exfat {
 
 impl TryFrom<FormatVolumeOptions> for Exfat {
     type Error = ExfatError;
+
+    /// Attempts to initialize an exFAT formatter instance based on the [`FormatVolumeOptions`]
+    /// provided.
     fn try_from(format_options: FormatVolumeOptions) -> Result<Self, Self::Error> {
         let size = format_options.dev_size;
 

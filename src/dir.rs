@@ -11,6 +11,7 @@ use crate::format::{
 
 pub(crate) const VOLUME_GUID_ENTRY_TYPE: u8 = 0xA0;
 
+/// A generic exFAT directory entry.
 #[derive(Copy, Clone, Debug)]
 #[repr(C, u8)]
 pub(crate) enum DirEntry {
@@ -31,6 +32,7 @@ pub(crate) enum DirEntry {
 }
 
 impl DirEntry {
+    /// Retrieves the bytes of the directory entry.
     pub(crate) fn bytes(&self) -> [u8; 32] {
         assert_eq!(size_of::<DirEntry>(), 32);
         unsafe { transmute::<DirEntry, [u8; 32]>(*self) }
