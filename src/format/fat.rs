@@ -49,7 +49,7 @@ impl Exfat {
         entry: FatEntry,
         index: u64,
     ) -> io::Result<()> {
-        let offset_bytes = self.fat_offset as u64 * self.bytes_per_sector as u64
+        let offset_bytes = self.fat_offset as u64 * self.format_options.bytes_per_sector as u64
             + index * size_of::<FatEntry>() as u64;
         device.seek(SeekFrom::Start(offset_bytes))?;
         device.write_all(&entry.0.to_le_bytes())
@@ -83,20 +83,24 @@ impl Exfat {
 
 #[test]
 fn small_fat_creation() {
-    use super::{FormatVolumeOptions, Label};
+    use super::Exfat;
+    use super::FormatVolumeOptionsBuilder;
 
     let size: u64 = 32 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
-    let bytes_per_sector = 512;
 
-    let mut formatter = Exfat::try_new(
-        0,
-        bytes_per_sector,
-        size,
-        crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        FormatVolumeOptions::new(false, false, size, Label::default()),
-    )
-    .unwrap();
+    let format_options = FormatVolumeOptionsBuilder::default()
+        .pack_bitmap(false)
+        .full_format(false)
+        .partition_offset(0)
+        .boundary_align(crate::DEFAULT_BOUNDARY_ALIGNEMENT)
+        .dev_size(size)
+        .bytes_per_sector(512)
+        .build()
+        .unwrap();
+
+    let mut formatter = Exfat::try_from(format_options).unwrap();
+
     formatter.write(&mut f).unwrap();
 
     assert_eq!(formatter.cluster_count_used, 4);
@@ -104,20 +108,24 @@ fn small_fat_creation() {
 
 #[test]
 fn medium_fat_creation() {
-    use super::{FormatVolumeOptions, Label};
+    use super::Exfat;
+    use super::FormatVolumeOptionsBuilder;
 
     let size: u64 = 512 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
-    let bytes_per_sector = 512;
 
-    let mut formatter = Exfat::try_new(
-        0,
-        bytes_per_sector,
-        size,
-        crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        FormatVolumeOptions::new(false, false, size, Label::default()),
-    )
-    .unwrap();
+    let format_options = FormatVolumeOptionsBuilder::default()
+        .pack_bitmap(false)
+        .full_format(false)
+        .partition_offset(0)
+        .boundary_align(crate::DEFAULT_BOUNDARY_ALIGNEMENT)
+        .dev_size(size)
+        .bytes_per_sector(512)
+        .build()
+        .unwrap();
+
+    let mut formatter = Exfat::try_from(format_options).unwrap();
+
     formatter.write(&mut f).unwrap();
 
     assert_eq!(formatter.cluster_count_used, 3);

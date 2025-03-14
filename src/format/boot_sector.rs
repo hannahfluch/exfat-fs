@@ -119,7 +119,7 @@ impl BootSector {
             jump_boot: [0xeb, 0x76, 0x90],
             filesystem_name: *b"EXFAT   ",
             _reserved: [0; 53],
-            partition_offset: meta.partition_offset.to_le(),
+            partition_offset: meta.format_options.partition_offset.to_le(),
             volume_length: meta.volume_length.to_le(),
             bytes_per_sector_shift: meta.bytes_per_sector_shift,
             fat_offset: meta.fat_offset.to_le(),
@@ -200,7 +200,7 @@ impl Exfat {
         f: &mut T,
         mut offset_sectors: u64,
     ) -> io::Result<()> {
-        let mut checksum = Checksum::new(self.bytes_per_sector);
+        let mut checksum = Checksum::new(self.format_options.bytes_per_sector);
 
         let boot_sector = BootSector::new(self);
 
@@ -219,7 +219,7 @@ impl Exfat {
         // todo: add flash/custom parameter support
         disk::write_zeroes(
             f,
-            self.bytes_per_sector as u64,
+            self.format_options.bytes_per_sector as u64,
             self.offset_sector_bytes(offset_sectors),
         )?;
         checksum.zero_sector();
@@ -228,7 +228,7 @@ impl Exfat {
         // write reserved sector
         disk::write_zeroes(
             f,
-            self.bytes_per_sector as u64,
+            self.format_options.bytes_per_sector as u64,
             self.offset_sector_bytes(offset_sectors),
         )?;
         checksum.zero_sector();
@@ -261,7 +261,7 @@ impl Exfat {
     ) -> io::Result<Vec<u32>> {
         f.seek(SeekFrom::Start(self.offset_sector_bytes(offset_sectors)))?;
 
-        let buffer_len = self.bytes_per_sector as usize / 4;
+        let buffer_len = self.format_options.bytes_per_sector as usize / 4;
         let mut buffer = vec![0; buffer_len];
 
         buffer[buffer_len - 1] = EXTENDED_BOOT_SIGNATURE.to_le();
@@ -285,7 +285,7 @@ impl Exfat {
 
         let checksum = checksum.get();
 
-        let buffer_len = self.bytes_per_sector as usize / 4;
+        let buffer_len = self.format_options.bytes_per_sector as usize / 4;
         let mut buffer = vec![0u32; buffer_len];
 
         for i in buffer.iter_mut() {
@@ -299,25 +299,28 @@ impl Exfat {
 
     /// Offset in bytes until the given sector index.
     fn offset_sector_bytes(&self, sector_index: u64) -> u64 {
-        self.bytes_per_sector as u64 * sector_index
+        self.format_options.bytes_per_sector as u64 * sector_index
     }
 }
 
 #[test]
 fn small_simple() {
+    use crate::format::FormatVolumeOptionsBuilder;
     let size: u64 = 256 * crate::MB as u64;
-    let bytes_per_sector = 512;
 
-    let meta = Exfat::try_new(
-        0,
-        bytes_per_sector,
-        size,
-        crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        super::FormatVolumeOptions::new(false, false, size, super::Label::default()),
-    )
-    .unwrap();
+    let format_options = FormatVolumeOptionsBuilder::default()
+        .pack_bitmap(false)
+        .full_format(false)
+        .partition_offset(0)
+        .boundary_align(crate::DEFAULT_BOUNDARY_ALIGNEMENT)
+        .dev_size(size)
+        .bytes_per_sector(512)
+        .build()
+        .unwrap();
 
-    let boot_sector = BootSector::new(&meta);
+    let exfat = Exfat::try_from(format_options).unwrap();
+
+    let boot_sector = BootSector::new(&exfat);
 
     assert_eq!(boot_sector.jump_boot, [0xEB, 0x76, 0x90]);
     assert_eq!(boot_sector.filesystem_name, *b"EXFAT   ");
@@ -334,17 +337,21 @@ fn small_simple() {
 
 #[test]
 fn small_pack_bitmap() {
+    use crate::format::Exfat;
+    use crate::format::FormatVolumeOptionsBuilder;
     let size: u64 = 256 * crate::MB as u64;
-    let bytes_per_sector = 512;
 
-    let meta = Exfat::try_new(
-        0,
-        bytes_per_sector,
-        size,
-        crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        super::FormatVolumeOptions::new(true, false, size, super::Label::default()),
-    )
-    .unwrap();
+    let format_options = FormatVolumeOptionsBuilder::default()
+        .pack_bitmap(true)
+        .full_format(false)
+        .partition_offset(0)
+        .boundary_align(crate::DEFAULT_BOUNDARY_ALIGNEMENT)
+        .dev_size(size)
+        .bytes_per_sector(512)
+        .build()
+        .unwrap();
+
+    let meta = Exfat::try_from(format_options).unwrap();
 
     let boot_sector = BootSector::new(&meta);
 
@@ -363,17 +370,20 @@ fn small_pack_bitmap() {
 
 #[test]
 fn big_simple() {
+    use crate::format::FormatVolumeOptionsBuilder;
     let size: u64 = 5 * crate::GB as u64;
-    let bytes_per_sector = 512;
 
-    let meta = Exfat::try_new(
-        0,
-        bytes_per_sector,
-        size,
-        crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        super::FormatVolumeOptions::new(false, false, size, super::Label::default()),
-    )
-    .unwrap();
+    let format_options = FormatVolumeOptionsBuilder::default()
+        .pack_bitmap(false)
+        .full_format(false)
+        .partition_offset(0)
+        .boundary_align(crate::DEFAULT_BOUNDARY_ALIGNEMENT)
+        .dev_size(size)
+        .bytes_per_sector(512)
+        .build()
+        .unwrap();
+
+    let meta = Exfat::try_from(format_options).unwrap();
 
     let boot_sector = BootSector::new(&meta);
     assert_eq!(boot_sector.jump_boot, [0xEB, 0x76, 0x90]);
@@ -391,21 +401,26 @@ fn big_simple() {
 
 #[test]
 fn boot_region() {
-    use super::{FormatVolumeOptions, Label};
+    use super::FormatVolumeOptionsBuilder;
     use std::io::Read;
 
     let size: u64 = 32 * crate::MB as u64;
-    let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
     let bytes_per_sector = 512;
 
-    let mut formatter = Exfat::try_new(
-        0,
-        bytes_per_sector,
-        size,
-        crate::DEFAULT_BOUNDARY_ALIGNEMENT,
-        FormatVolumeOptions::new(false, false, size, Label::default()),
-    )
-    .unwrap();
+    let format_options = FormatVolumeOptionsBuilder::default()
+        .pack_bitmap(false)
+        .full_format(false)
+        .partition_offset(0)
+        .boundary_align(crate::DEFAULT_BOUNDARY_ALIGNEMENT)
+        .dev_size(size)
+        .bytes_per_sector(bytes_per_sector)
+        .build()
+        .unwrap();
+
+    let mut formatter = Exfat::try_from(format_options).unwrap();
+
+    let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
+
     formatter.write(&mut f).unwrap();
 
     let offset_main_checksum_bytes = 11 * bytes_per_sector as u64;
