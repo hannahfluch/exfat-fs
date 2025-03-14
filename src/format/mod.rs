@@ -20,10 +20,11 @@ use util::{
 
 use crate::{disk, error::ExfatError};
 
-pub mod boot_sector;
-pub mod fat;
-pub mod upcase_table;
-pub mod util;
+/// ExFat boot sector creation.
+mod boot_sector;
+mod fat;
+pub(crate) mod upcase_table;
+pub(super) mod util;
 
 /// A UTF16 encoded volume label. The length must not exceed 11 characters.
 #[derive(Copy, Clone, Debug, Default)]
@@ -102,28 +103,28 @@ impl FormatVolumeOptionsBuilder {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Exfat {
-    pub(super) volume_length: u64,
-    pub(super) fat_offset: u32,
-    pub(super) fat_length: u32,
-    pub(super) cluster_heap_offset: u32,
-    pub(super) cluster_count: u32,
-    pub(super) cluster_count_used: u32,
-    pub(super) first_cluster_of_root_directory: u32,
-    pub(super) file_system_revision: FileSystemRevision,
-    pub(super) volume_flags: u16,
-    pub(super) bytes_per_sector_shift: u8,
-    pub(super) sectors_per_cluster_shift: u8,
-    pub(super) number_of_fats: u8,
-    pub(super) uptable_length_bytes: u32,
-    pub(super) bitmap_length_bytes: u32,
-    pub(super) bitmap_offset_bytes: u32,
-    pub(super) bytes_per_cluster: u32,
-    pub(super) volume_serial_number: VolumeSerialNumber,
-    pub(super) root_offset_bytes: u32,
-    pub(super) format_options: FormatVolumeOptions,
-    pub(super) root_length_bytes: u32,
-    pub(super) uptable_offset_bytes: u32,
-    pub(super) uptable_start_cluster: u32,
+    volume_length: u64,
+    fat_offset: u32,
+    fat_length: u32,
+    cluster_heap_offset: u32,
+    cluster_count: u32,
+    cluster_count_used: u32,
+    first_cluster_of_root_directory: u32,
+    file_system_revision: FileSystemRevision,
+    volume_flags: u16,
+    bytes_per_sector_shift: u8,
+    sectors_per_cluster_shift: u8,
+    number_of_fats: u8,
+    uptable_length_bytes: u32,
+    bitmap_length_bytes: u32,
+    bitmap_offset_bytes: u32,
+    bytes_per_cluster: u32,
+    volume_serial_number: VolumeSerialNumber,
+    root_offset_bytes: u32,
+    format_options: FormatVolumeOptions,
+    root_length_bytes: u32,
+    uptable_offset_bytes: u32,
+    uptable_start_cluster: u32,
 }
 
 impl TryFrom<FormatVolumeOptions> for Exfat {

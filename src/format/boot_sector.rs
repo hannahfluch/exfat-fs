@@ -15,7 +15,7 @@ use super::{
 /// This structure defines the essential parameters required for the file system.
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
-pub struct BootSector {
+pub(super) struct BootSector {
     /// The jump instruction for CPUs to execute bootstrapping instructions in `boot_code`.
     /// - Must be `0xEB 0x76 0x90` in order (low-order byte first).
     jump_boot: [u8; 3],
@@ -114,7 +114,7 @@ pub struct BootSector {
 
 impl BootSector {
     /// Creates a new boot sector with a single FAT. All input parameters are given in bytes. (NOT SECTORS!). The offset to the bitmap is also returned.
-    pub fn new(meta: &Exfat) -> BootSector {
+    pub(super) fn new(meta: &Exfat) -> BootSector {
         Self {
             jump_boot: [0xeb, 0x76, 0x90],
             filesystem_name: *b"EXFAT   ",
@@ -141,13 +141,13 @@ impl BootSector {
     }
 }
 #[derive(Copy, Clone, Debug)]
-pub struct Checksum {
+pub(super) struct Checksum {
     inner: u32,
     sector_size_in_bytes: u16,
 }
 
 impl Checksum {
-    pub fn new(sector_size_in_bytes: u16) -> Checksum {
+    pub(super) fn new(sector_size_in_bytes: u16) -> Checksum {
         Self {
             inner: 0,
             sector_size_in_bytes,
@@ -157,14 +157,14 @@ impl Checksum {
 
 impl Checksum {
     /// Updates the checksum according to one entirely empty sector.
-    pub fn zero_sector(&mut self) {
+    pub(super) fn zero_sector(&mut self) {
         for _ in 0..self.sector_size_in_bytes {
             self.inner = (self.inner & 1) * 0x80000000 + (self.inner >> 1);
         }
     }
 
     /// Updates the checksum according to a boot sector.
-    pub fn boot_sector(&mut self, sector: &[u8]) {
+    pub(super) fn boot_sector(&mut self, sector: &[u8]) {
         assert_eq!(sector.len(), self.sector_size_in_bytes as usize);
         for i in 0..self.sector_size_in_bytes {
             if i == 106 || i == 107 || i == 112 {
@@ -177,7 +177,7 @@ impl Checksum {
     }
 
     /// Updates the checksum according to a set of extended boot sectors.
-    pub fn extended_boot_sector(&mut self, sector: &[u8], amount: u64) {
+    pub(super) fn extended_boot_sector(&mut self, sector: &[u8], amount: u64) {
         assert_eq!(sector.len(), self.sector_size_in_bytes as usize);
         for _ in 0..amount {
             for i in 0..self.sector_size_in_bytes {
@@ -188,7 +188,7 @@ impl Checksum {
     }
 
     /// Returns a copy of the current state of the checksum in little-endian format.
-    pub fn get(&self) -> u32 {
+    pub(super) fn get(&self) -> u32 {
         self.inner.to_le()
     }
 }
