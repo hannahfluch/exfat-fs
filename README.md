@@ -1,4 +1,6 @@
-# exFAT
+# exFAT-fs
+[![Crates.io Version](https://img.shields.io/crates/v/exfat-fs)](https://crates.io/crates/exfat-fs)
+
 exFAT filesystem formatting in Rust.
 
 ## Usage
