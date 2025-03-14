@@ -1,6 +1,6 @@
 use std::io::{self, Seek, SeekFrom, Write};
 
-use super::{util::UPCASE_TABLE_SIZE_BYTES, Exfat};
+use super::{Exfat, util::UPCASE_TABLE_SIZE_BYTES};
 
 impl Exfat {
     pub(super) fn write_upcase_table<T: Write + Seek>(&self, device: &mut T) -> io::Result<()> {
