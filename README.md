@@ -8,7 +8,8 @@ exFAT filesystem formatting in Rust.
 ```rust
 use exfat_fs::{
     MB,
-    format::{Exfat, FormatVolumeOptionsBuilder, Label},
+    Label,
+    format::{Exfat, FormatVolumeOptionsBuilder},
 };
 
 let size: u64 = 32 * MB as u64;

@@ -4,12 +4,9 @@ use std::{
 };
 
 use crate::{
-    DEFAULT_BOUNDARY_ALIGNEMENT, FIRST_USABLE_CLUSTER_INDEX, GB, KB, MB,
+    DEFAULT_BOUNDARY_ALIGNEMENT, FIRST_USABLE_CLUSTER_INDEX, GB, KB, Label, MB,
     boot_sector::{FileSystemRevision, VolumeSerialNumber},
-    dir::{
-        BitmapEntry, DirEntry, UpcaseTableEntry, VOLUME_GUID_ENTRY_TYPE, VolumeGuidEntry,
-        VolumeLabelEntry,
-    },
+    dir::{Root, entry::DirEntry},
     upcase_table::{DEFAULT_UPCASE_TABLE, UPCASE_TABLE_SIZE_BYTES},
 };
 use boot::{BACKUP_BOOT_OFFSET, MAIN_BOOT_OFFSET, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE};
@@ -17,34 +14,11 @@ use bytemuck::cast_slice;
 use checked_num::CheckedU64;
 use derive_builder::Builder;
 
-use crate::{disk, error::ExfatError};
+use crate::{disk, error::ExfatFormatError};
 
 /// ExFat boot sector creation.
 mod boot;
 mod fat;
-
-/// A UTF16 encoded volume label. The length must not exceed 11 characters.
-#[derive(Copy, Clone, Debug, Default)]
-pub struct Label(pub(crate) [u8; 22], pub(crate) u8);
-
-impl Label {
-    pub fn new(label: String) -> Option<Label> {
-        let len = label.len();
-        if len > 11 {
-            None
-        } else {
-            let mut utf16_bytes = [0u8; 22];
-
-            let encoded: Vec<u8> = label.encode_utf16().flat_map(|x| x.to_le_bytes()).collect();
-
-            let copy_len = encoded.len();
-            assert!(copy_len <= 22);
-            utf16_bytes[..copy_len].copy_from_slice(&encoded[..copy_len]);
-
-            Some(Label(utf16_bytes, len as u8))
-        }
-    }
-}
 
 /// A struct of exfat formatting options. It implements the [`derive_builder::Builder`] pattern.
 #[derive(Builder, Copy, Clone, Debug)]
@@ -125,7 +99,7 @@ pub struct Exfat {
 }
 
 impl TryFrom<FormatVolumeOptions> for Exfat {
-    type Error = ExfatError;
+    type Error = ExfatFormatError;
 
     /// Attempts to initialize an exFAT formatter instance based on the [`FormatVolumeOptions`]
     /// provided.
@@ -146,7 +120,7 @@ impl TryFrom<FormatVolumeOptions> for Exfat {
             || !(format_options.bytes_per_sector as u32..=MAX_CLUSTER_SIZE)
                 .contains(&bytes_per_cluster)
         {
-            return Err(ExfatError::InvlaidClusterSize(bytes_per_cluster));
+            return Err(ExfatFormatError::InvlaidClusterSize(bytes_per_cluster));
         }
         let bytes_per_sector_shift = format_options.bytes_per_sector.ilog2() as u8;
         let sectors_per_cluster_shift =
@@ -155,16 +129,18 @@ impl TryFrom<FormatVolumeOptions> for Exfat {
         let volume_length = size / format_options.bytes_per_sector as u64;
 
         if volume_length < (1 << (20 - bytes_per_sector_shift)) {
-            return Err(ExfatError::InvalidSize(size));
+            return Err(ExfatFormatError::InvalidSize(size));
         }
 
         let fat_offset_bytes: u32 = (CheckedU64::new(format_options.bytes_per_sector as u64) * 24
             + partition_offset)
-            .ok_or(ExfatError::InvalidPartitionOffset(partition_offset))?
+            .ok_or(ExfatFormatError::InvalidPartitionOffset(partition_offset))?
             .next_multiple_of(format_options.boundary_align as u64)
             .sub(partition_offset)
             .try_into()
-            .map_err(|_| ExfatError::BoundaryAlignemntTooBig(format_options.boundary_align))?;
+            .map_err(|_| {
+                ExfatFormatError::BoundaryAlignemntTooBig(format_options.boundary_align)
+            })?;
 
         let fat_offset = fat_offset_bytes / format_options.bytes_per_sector as u32;
 
@@ -172,16 +148,16 @@ impl TryFrom<FormatVolumeOptions> for Exfat {
             ((CheckedU64::new(size) - fat_offset_bytes as u64 - number_of_fats as u64 * 8 - 1)
                 / (bytes_per_cluster as u64 + 4 * number_of_fats as u64)
                 + 1)
-            .ok_or(ExfatError::InvlaidClusterSize(bytes_per_cluster))?
+            .ok_or(ExfatFormatError::InvlaidClusterSize(bytes_per_cluster))?
             .into();
 
         let fat_length_bytes = ((max_clusters + 2) * 4)
-            .ok_or(ExfatError::InvlaidClusterSize(bytes_per_cluster))?
+            .ok_or(ExfatFormatError::InvlaidClusterSize(bytes_per_cluster))?
             .next_multiple_of(format_options.bytes_per_sector as u64);
 
         let fat_length: u32 = (fat_length_bytes / format_options.bytes_per_sector as u64)
             .try_into()
-            .map_err(|_| ExfatError::InvlaidClusterSize(bytes_per_cluster))?;
+            .map_err(|_| ExfatFormatError::InvlaidClusterSize(bytes_per_cluster))?;
 
         let mut cluster_heap_offset_bytes = ((partition_offset
             + fat_offset_bytes as u64
@@ -193,7 +169,7 @@ impl TryFrom<FormatVolumeOptions> for Exfat {
             cluster_heap_offset_bytes / format_options.bytes_per_sector as u32;
 
         if cluster_heap_offset_bytes as u64 >= size {
-            return Err(ExfatError::BoundaryAlignemntTooBig(
+            return Err(ExfatFormatError::BoundaryAlignemntTooBig(
                 format_options.boundary_align,
             ));
         }
@@ -201,7 +177,7 @@ impl TryFrom<FormatVolumeOptions> for Exfat {
         let mut cluster_count: u32 = ((size - cluster_heap_offset_bytes as u64)
             / bytes_per_cluster as u64)
             .try_into()
-            .map_err(|_| ExfatError::InvlaidClusterSize(bytes_per_cluster))?;
+            .map_err(|_| ExfatFormatError::InvlaidClusterSize(bytes_per_cluster))?;
 
         if cluster_count
             > MAX_CLUSTER_COUNT.min(
@@ -209,7 +185,7 @@ impl TryFrom<FormatVolumeOptions> for Exfat {
                     / 2u64.pow(sectors_per_cluster_shift as u32)) as u32,
             )
         {
-            return Err(ExfatError::InvlaidClusterSize(bytes_per_cluster));
+            return Err(ExfatFormatError::InvlaidClusterSize(bytes_per_cluster));
         }
 
         // bitmap is first cluster of cluster heap
@@ -229,7 +205,7 @@ impl TryFrom<FormatVolumeOptions> for Exfat {
                     < fat_end_bytes
                     || cluster_count > MAX_CLUSTER_COUNT - bitmap_cluster_count_packed
                 {
-                    return Err(ExfatError::CannotPackBitmap);
+                    return Err(ExfatFormatError::CannotPackBitmap);
                 }
 
                 let total_cluster_count = cluster_count + bitmap_cluster_count_packed;
@@ -299,7 +275,7 @@ impl TryFrom<FormatVolumeOptions> for Exfat {
 impl Exfat {
     /// Attempts to write the boot region & FAT onto the device. The file length must be the same as the
     /// provided `dev_size` in the [`Exfat`].
-    pub fn write<T: Write + Seek>(&mut self, f: &mut T) -> Result<(), ExfatError> {
+    pub fn write<T: Write + Seek>(&mut self, f: &mut T) -> Result<(), ExfatFormatError> {
         let old_pos = f.stream_position()?;
         let len = f.seek(SeekFrom::End(0))?;
 
@@ -310,7 +286,7 @@ impl Exfat {
         assert_eq!(len, self.format_options.dev_size);
 
         if len != self.format_options.dev_size {
-            return Err(ExfatError::InvalidFileSize);
+            return Err(ExfatFormatError::InvalidFileSize);
         }
 
         let size = if self.format_options.full_format {
@@ -392,36 +368,23 @@ impl Exfat {
     }
 
     fn write_root_dir<T: Write + Seek>(&self, device: &mut T) -> io::Result<()> {
-        // create volume label entry
-        let vol_label = DirEntry::VolumeLabel(VolumeLabelEntry::new(self.format_options.label));
-
-        // create volume GUID entry
-        let vol_guid = if let Some(guid) = self.format_options.guid {
-            DirEntry::VolumeGuid(VolumeGuidEntry::new(guid))
-        } else {
-            DirEntry::unused(VOLUME_GUID_ENTRY_TYPE)
-        };
-
-        // create bitmap entry
-        let bitmap = DirEntry::Bitmap(BitmapEntry::new(self.bitmap_length_bytes as u64));
-
-        // create upcase table entry
-        let uptable = DirEntry::UpcaseTable(UpcaseTableEntry::new(self.uptable_start_cluster));
-
-        let bytes = [vol_label, vol_guid, bitmap, uptable]
-            .into_iter()
-            .flat_map(|b| b.bytes())
-            .collect::<Vec<u8>>();
+        let root = Root::new(
+            self.format_options.label,
+            self.format_options.guid,
+            self.bitmap_length_bytes as u64,
+            self.uptable_start_cluster,
+        );
 
         device.seek(SeekFrom::Start(self.root_offset_bytes as u64))?;
-        device.write_all(&bytes)?;
+        device.write_all(&root.bytes())?;
         Ok(())
     }
 }
 
 #[test]
 fn small_format() {
-    use crate::format::{FormatVolumeOptionsBuilder, Label};
+    use crate::Label;
+    use crate::format::FormatVolumeOptionsBuilder;
     use std::io::Read;
 
     let size: u64 = 32 * crate::MB as u64;

@@ -4,7 +4,7 @@
 use std::mem::transmute;
 
 use crate::FIRST_USABLE_CLUSTER_INDEX;
-use crate::format::Label;
+use crate::Label;
 use crate::upcase_table::{DEFAULT_UPCASE_TABLE, DEFAULT_UPCASE_TABLE_CHECKSUM};
 
 pub(crate) const VOLUME_GUID_ENTRY_TYPE: u8 = 0xA0;

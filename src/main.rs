@@ -1,8 +1,8 @@
 use std::fs::OpenOptions;
 
 use exfat_fs::{
-    MB,
-    format::{Exfat, FormatVolumeOptionsBuilder, Label},
+    Label, MB,
+    format::{Exfat, FormatVolumeOptionsBuilder},
 };
 
 fn main() {
