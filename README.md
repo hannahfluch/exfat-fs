@@ -4,7 +4,7 @@ exFAT filesystem formatting in Rust.
 ## Usage
 
 ```rust
-use exfat::{
+use exfat_fs::{
     MB,
     format::{Exfat, FormatVolumeOptionsBuilder, Label},
 };

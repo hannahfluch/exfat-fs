@@ -1,6 +1,6 @@
 use std::fs::OpenOptions;
 
-use exfat::{
+use exfat_fs::{
     MB,
     format::{Exfat, FormatVolumeOptionsBuilder, Label},
 };
