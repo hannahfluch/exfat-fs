@@ -2,6 +2,7 @@ use std::fs::OpenOptions;
 
 use exfat_fs::{
     Label, MB,
+    dir::Root,
     format::{Exfat, FormatVolumeOptionsBuilder},
 };
 
@@ -30,4 +31,6 @@ fn main() {
 
     formatter.write(&mut file).unwrap();
     println!("done");
+
+    let _root = Root::open(file);
 }

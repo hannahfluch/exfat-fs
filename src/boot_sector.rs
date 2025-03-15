@@ -1,5 +1,5 @@
+use bitflags::bitflags;
 use bytemuck::{Pod, Zeroable};
-
 /// The Main/Backup Boot Sector structure for an exFAT volume.
 /// This structure defines the essential parameters required for the file system.
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -58,13 +58,8 @@ pub(crate) struct BootSector {
     /// - Example: `0x01 0x00` represents version 1.0.
     pub(crate) file_system_revision: FileSystemRevision,
 
-    /// A set of flags that indicate file system status.
-    /// - **Bit 0**: `ActiveFat` (0 = First FAT, 1 = Second FAT used in TexFAT).
-    /// - **Bit 1**: `VolumeDirty` (0 = clean, 1 = dirty).
-    /// - **Bit 2**: `MediaFailure` (0 = no failures, 1 = known media failures).
-    /// - **Bit 3**: `ClearToZero` (should be cleared before modifying file system structures).
+    /// A set of flags that indicate file system status. See [`VolumeFlags`]
     pub(crate) volume_flags: u16,
-
     /// The sector size in a power-of-two exponent.
     /// - Example: `9` → `2^9 = 512` bytes per sector.
     /// - Valid range: `9` (512 bytes) to `12` (4096 bytes).
@@ -99,6 +94,21 @@ pub(crate) struct BootSector {
     /// Identifies this sector as a boot sector.
     /// - Must be `0xAA55` to be considered valid.
     pub(crate) boot_signature: u16,
+}
+
+bitflags! {
+    /// A set of flags that indicate file system status.
+    #[derive(Copy, Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq)]
+    pub struct VolumeFlags: u16 {
+        /// - **Bit 0**: `ActiveFat` (0 = First FAT, 1 = Second FAT used in TexFAT).
+        const ACTIVE_FAT = 1 << 0;
+        /// - **Bit 1**: `VolumeDirty` (0 = clean, 1 = dirty).
+        const VOLUME_DIRTY = 1 << 1;
+        /// - **Bit 2**: `MediaFailure` (0 = no failures, 1 = known media failures).
+        const MEDIA_FAILURE = 1 << 2;
+        /// - **Bit 3**: `ClearToZero` (should be cleared before modifying file system structures).
+        const CLEAR_TO_ZERO = 1 << 3;
+    }
 }
 
 use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};

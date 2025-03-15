@@ -41,7 +41,7 @@ impl BootSector {
             sectors_per_cluster_shift: meta.sectors_per_cluster_shift,
             first_cluster_of_root_directory: meta.first_cluster_of_root_directory.to_le(),
             volume_serial_number: meta.volume_serial_number,
-            volume_flags: meta.volume_flags.to_le(),
+            volume_flags: meta.volume_flags.bits().to_le(),
             file_system_revision: meta.file_system_revision,
             drive_select: DRIVE_SELECT,
             percent_in_use: 0xFF, // not currently supported

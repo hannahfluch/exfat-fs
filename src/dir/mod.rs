@@ -1,4 +1,10 @@
-use crate::Label;
+use crate::{
+    Label,
+    boot_sector::{BootSector, VolumeFlags},
+    disk::Read,
+    error::RootError,
+};
+use bytemuck::from_bytes_mut;
 use entry::{
     BitmapEntry, DirEntry, UpcaseTableEntry, VOLUME_GUID_ENTRY_TYPE, VolumeGuidEntry,
     VolumeLabelEntry,
@@ -54,5 +60,51 @@ impl Root {
             .into_iter()
             .flat_map(|b| b.bytes())
             .collect::<Vec<u8>>()
+    }
+}
+
+impl Root {
+    pub fn open<R: Read>(device: R) -> Result<(), RootError<R::ReadError>> {
+        let mut bytes = vec![0; 512];
+        device.read_exact(0, &mut bytes)?;
+        let boot_sector = from_bytes_mut::<BootSector>(&mut bytes);
+
+        // check for fs name
+        if boot_sector.filesystem_name != *b"EXFAT   " {
+            return Err(RootError::WrongFs);
+        }
+
+        // check for bytes per sector shift
+        if !(9..=12).contains(&boot_sector.bytes_per_sector_shift) {
+            return Err(RootError::InvalidBytesPerSectorShift(
+                boot_sector.bytes_per_sector_shift,
+            ));
+        }
+
+        // check for sectors per cluster shift
+        if boot_sector.sectors_per_cluster_shift > 25 - boot_sector.bytes_per_sector_shift {
+            return Err(RootError::InvalidSectorsPerClusterShift(
+                boot_sector.sectors_per_cluster_shift,
+            ));
+        }
+
+        // check for number of fats
+        let fat_num = if [1, 2].contains(&boot_sector.number_of_fats) {
+            Ok(boot_sector.number_of_fats)
+        } else {
+            Err(RootError::InvalidNumberOfFats(boot_sector.number_of_fats))
+        }?;
+        let volume_flags = VolumeFlags::from_bits_truncate(boot_sector.volume_flags);
+
+        // check for correct active fat
+        if volume_flags.contains(VolumeFlags::ACTIVE_FAT) && fat_num == 1
+            || !volume_flags.contains(VolumeFlags::ACTIVE_FAT) && fat_num == 2
+        {
+            return Err(RootError::InvalidNumberOfFats(fat_num));
+        }
+
+        // todo: load FAT
+
+        unimplemented!()
     }
 }

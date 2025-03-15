@@ -38,7 +38,7 @@
 
 pub(crate) mod boot_sector;
 /// Directory abstractions
-pub(crate) mod dir;
+pub mod dir;
 /// Disk utility functions
 pub mod disk;
 pub mod error;

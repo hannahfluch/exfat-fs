@@ -1,5 +1,7 @@
 use std::{io, time::SystemTimeError};
 
+use crate::disk::PartitionError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ExfatFormatError {
     #[error("Invalid bytes per sector. Must be a power of `2` and between `512` and `4096`: {0}.")]
@@ -22,4 +24,26 @@ pub enum ExfatFormatError {
     InvalidFileSize,
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RootError<O> {
+    #[error("Unexpected end of partition")]
+    UnexpectedEop,
+    #[error("I/O error: {0}")]
+    Io(#[from] O),
+    #[error("The provided volume is not an exFAT filesystem.")]
+    WrongFs,
+    #[error("Invalid bytes per sector shift detected: {0}. Must be between `9` and `12`")]
+    InvalidBytesPerSectorShift(u8),
+    #[error("Invalid sectors per cluster shift detected: {0}.")]
+    InvalidSectorsPerClusterShift(u8),
+    #[error("Invalid number of FATs detected: {0}. Must be either `1` or `2`.")]
+    InvalidNumberOfFats(u8),
+}
+
+impl<O> PartitionError for RootError<O> {
+    fn unexpected_eop() -> Self {
+        RootError::UnexpectedEop
+    }
 }

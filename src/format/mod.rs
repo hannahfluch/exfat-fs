@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     DEFAULT_BOUNDARY_ALIGNEMENT, FIRST_USABLE_CLUSTER_INDEX, GB, KB, Label, MB,
-    boot_sector::{FileSystemRevision, VolumeSerialNumber},
+    boot_sector::{FileSystemRevision, VolumeFlags, VolumeSerialNumber},
     dir::{Root, entry::DirEntry},
     upcase_table::{DEFAULT_UPCASE_TABLE, UPCASE_TABLE_SIZE_BYTES},
 };
@@ -82,7 +82,7 @@ pub struct Exfat {
     cluster_count_used: u32,
     first_cluster_of_root_directory: u32,
     file_system_revision: FileSystemRevision,
-    volume_flags: u16,
+    volume_flags: VolumeFlags,
     bytes_per_sector_shift: u8,
     sectors_per_cluster_shift: u8,
     number_of_fats: u8,
@@ -110,7 +110,7 @@ impl TryFrom<FormatVolumeOptions> for Exfat {
 
         // format volume with a single FAT
         let number_of_fats = 1u8;
-        let volume_flags = 0;
+        let volume_flags = VolumeFlags::empty();
 
         // transform partition_offset to be measured by sectors
         let partition_offset =

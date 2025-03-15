@@ -1,4 +1,7 @@
-use std::io::{self, ErrorKind, Seek, Write};
+use std::{
+    io::{self, ErrorKind, Seek, Write},
+    os::unix::fs::FileExt,
+};
 
 /// Writes zeroes to a file from the given absolute offset (in bytes), up to the given size.
 pub fn write_zeroes<T>(f: &mut T, size: u64, offset: u64) -> io::Result<()>
@@ -20,4 +23,43 @@ where
         remaining -= iter_size;
     }
     Ok(())
+}
+
+pub trait PartitionError {
+    fn unexpected_eop() -> Self;
+}
+
+pub trait Read {
+    type ReadError: PartitionError;
+
+    fn read(&self, offset: u64, buffer: &mut [u8]) -> Result<usize, Self::ReadError>;
+
+    fn read_exact(&self, mut offset: u64, mut buffer: &mut [u8]) -> Result<(), Self::ReadError> {
+        while !buffer.is_empty() {
+            match self.read(offset, buffer) {
+                Ok(0) => break,
+                Ok(n) => {
+                    buffer = &mut buffer[n..];
+                    offset = offset
+                        .checked_add(n as u64)
+                        .ok_or(PartitionError::unexpected_eop())?;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+}
+
+impl PartitionError for io::Error {
+    fn unexpected_eop() -> Self {
+        io::Error::from(io::ErrorKind::UnexpectedEof)
+    }
+}
+
+impl Read for std::fs::File {
+    type ReadError = io::Error;
+    fn read(&self, offset: u64, buffer: &mut [u8]) -> Result<usize, Self::ReadError> {
+        self.read_at(buffer, offset)
+    }
 }
