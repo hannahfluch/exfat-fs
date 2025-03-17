@@ -42,6 +42,7 @@ pub mod dir;
 /// Disk utility functions
 pub mod disk;
 pub mod error;
+pub(crate) mod fat;
 /// Filesystem formatting capabilities
 pub mod format;
 pub(crate) mod upcase_table;

@@ -1,24 +1,8 @@
 use std::io::{self, Seek, SeekFrom, Write};
 
-use crate::FIRST_USABLE_CLUSTER_INDEX;
+use crate::{FIRST_USABLE_CLUSTER_INDEX, fat::FatEntry};
 
 use super::Exfat;
-
-#[repr(transparent)]
-#[derive(Copy, Clone, Debug)]
-struct FatEntry(u32);
-
-impl FatEntry {
-    /// The media type FAT entry. `F8h` as the first byte and `FFh` for the remeaining three bytes.
-    fn media_type() -> FatEntry {
-        Self(0xfffffff8u32)
-    }
-
-    /// Marks the end of a cluster chain.
-    fn eof() -> FatEntry {
-        Self(0xffffffff)
-    }
-}
 
 impl Exfat {
     pub(super) fn write_fat<T: Write + Seek>(&mut self, device: &mut T) -> io::Result<()> {

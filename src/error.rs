@@ -1,6 +1,6 @@
 use std::{io, time::SystemTimeError};
 
-use crate::disk::PartitionError;
+use crate::disk::ReadOffset;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExfatFormatError {
@@ -22,16 +22,14 @@ pub enum ExfatFormatError {
     CannotPackBitmap,
     #[error("File size does not match exFAT size.")]
     InvalidFileSize,
-    #[error("I/O error: {0}")]
+    #[error("I/O error: {0}.")]
     Io(#[from] io::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum RootError<O> {
-    #[error("Unexpected end of partition")]
-    UnexpectedEop,
-    #[error("I/O error: {0}")]
-    Io(#[from] O),
+pub enum RootError<O: ReadOffset> {
+    #[error("I/O error: {0}.")]
+    Io(O::ReadOffsetError),
     #[error("The provided volume is not an exFAT filesystem.")]
     WrongFs,
     #[error("Invalid bytes per sector shift detected: {0}. Must be between `9` and `12`")]
@@ -40,10 +38,14 @@ pub enum RootError<O> {
     InvalidSectorsPerClusterShift(u8),
     #[error("Invalid number of FATs detected: {0}. Must be either `1` or `2`.")]
     InvalidNumberOfFats(u8),
+    #[error("Fat could not be parsed: {0}.")]
+    Fat(#[from] FatLoadError<O>),
 }
 
-impl<O> PartitionError for RootError<O> {
-    fn unexpected_eop() -> Self {
-        RootError::UnexpectedEop
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum FatLoadError<O: ReadOffset> {
+    #[error("FAT starts at invalid offset.")]
+    InvalidOffset,
+    #[error("Read failed at: {0:#x}.")]
+    ReadFailed(u64, #[source] O::ReadOffsetError),
 }

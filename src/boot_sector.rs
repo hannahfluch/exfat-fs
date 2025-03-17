@@ -1,8 +1,9 @@
 use bitflags::bitflags;
 use bytemuck::{Pod, Zeroable};
+use endify::Endify;
 /// The Main/Backup Boot Sector structure for an exFAT volume.
 /// This structure defines the essential parameters required for the file system.
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable, Endify)]
 #[repr(C)]
 pub(crate) struct BootSector {
     /// The jump instruction for CPUs to execute bootstrapping instructions in `boot_code`.
@@ -96,6 +97,13 @@ pub(crate) struct BootSector {
     pub(crate) boot_signature: u16,
 }
 
+impl BootSector {
+    #[inline(always)]
+    pub(crate) const fn bytes_per_sector(&self) -> u16 {
+        1 << self.bytes_per_sector_shift
+    }
+}
+
 bitflags! {
     /// A set of flags that indicate file system status.
     #[derive(Copy, Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq)]
@@ -115,7 +123,7 @@ use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 
 /// Structure representing the file system revision.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable, Endify)]
 pub(crate) struct FileSystemRevision {
     /// Minor version of the exFAT file system (low-order byte).
     vermin: u8,
@@ -133,7 +141,7 @@ impl Default for FileSystemRevision {
 
 /// Structure representing the unique volume serial number.
 #[repr(transparent)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable, Endify)]
 pub(crate) struct VolumeSerialNumber(u32);
 
 impl VolumeSerialNumber {

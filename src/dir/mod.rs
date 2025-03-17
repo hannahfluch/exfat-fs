@@ -1,10 +1,12 @@
 use crate::{
     Label,
     boot_sector::{BootSector, VolumeFlags},
-    disk::Read,
+    disk::ReadOffset,
     error::RootError,
+    fat::Fat,
 };
 use bytemuck::from_bytes_mut;
+use endify::Endify;
 use entry::{
     BitmapEntry, DirEntry, UpcaseTableEntry, VOLUME_GUID_ENTRY_TYPE, VolumeGuidEntry,
     VolumeLabelEntry,
@@ -64,10 +66,17 @@ impl Root {
 }
 
 impl Root {
-    pub fn open<R: Read>(device: R) -> Result<(), RootError<R::ReadError>> {
-        let mut bytes = vec![0; 512];
-        device.read_exact(0, &mut bytes)?;
+    pub fn open<R: ReadOffset + std::fmt::Debug>(mut device: R) -> Result<(), RootError<R>>
+    where
+        R::ReadOffsetError: std::fmt::Debug,
+    {
+        let mut bytes = vec![0u8; 512];
+        device.read_exact(0, &mut bytes).map_err(RootError::Io)?;
+
         let boot_sector = from_bytes_mut::<BootSector>(&mut bytes);
+
+        // convert to native endianess
+        let boot_sector = Endify::from_le(*boot_sector);
 
         // check for fs name
         if boot_sector.filesystem_name != *b"EXFAT   " {
@@ -103,8 +112,9 @@ impl Root {
             return Err(RootError::InvalidNumberOfFats(fat_num));
         }
 
-        // todo: load FAT
+        // parse FAT
+        let _fat = Fat::load(&mut device, &boot_sector)?;
 
-        unimplemented!()
+        todo!("read entries of root directory")
     }
 }
