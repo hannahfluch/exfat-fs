@@ -1,14 +1,14 @@
 #![allow(dead_code)] // todo: add file reading & writing
-                     // http://ntfs.com/exfat-directory-structure.htm
+// http://ntfs.com/exfat-directory-structure.htm
 
 use std::mem::transmute;
 
 use enumeric::range_enum;
 
+use crate::FIRST_USABLE_CLUSTER_INDEX;
+use crate::Label;
 use crate::error::DirEntryError;
 use crate::upcase_table::{DEFAULT_UPCASE_TABLE, DEFAULT_UPCASE_TABLE_CHECKSUM};
-use crate::Label;
-use crate::FIRST_USABLE_CLUSTER_INDEX;
 
 use super::DirEntryReader;
 

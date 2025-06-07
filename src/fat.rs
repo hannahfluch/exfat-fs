@@ -1,4 +1,4 @@
-use bytemuck::{checked::cast_slice, AnyBitPattern, NoUninit};
+use bytemuck::{AnyBitPattern, NoUninit, checked::cast_slice};
 use checked_num::CheckedU64;
 use endify::Endify;
 

@@ -4,10 +4,10 @@ use std::{
 };
 
 use crate::{
+    DEFAULT_BOUNDARY_ALIGNEMENT, FIRST_USABLE_CLUSTER_INDEX, GB, KB, Label, MB,
     boot_sector::{FileSystemRevision, VolumeFlags, VolumeSerialNumber},
-    dir::{entry::DirEntry, RawRoot},
+    dir::{RawRoot, entry::DirEntry},
     upcase_table::{DEFAULT_UPCASE_TABLE, UPCASE_TABLE_SIZE_BYTES},
-    Label, DEFAULT_BOUNDARY_ALIGNEMENT, FIRST_USABLE_CLUSTER_INDEX, GB, KB, MB,
 };
 use boot::{BACKUP_BOOT_OFFSET, MAIN_BOOT_OFFSET, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE};
 use bytemuck::cast_slice;
@@ -383,8 +383,8 @@ impl Exfat {
 
 #[test]
 fn small_format() {
-    use crate::format::FormatVolumeOptionsBuilder;
     use crate::Label;
+    use crate::format::FormatVolumeOptionsBuilder;
     use std::io::Read;
 
     let size: u64 = 32 * crate::MB as u64;

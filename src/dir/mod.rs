@@ -1,22 +1,22 @@
 use std::sync::Arc;
 
 use crate::{
+    Label,
     boot_sector::{BootSector, VolumeFlags},
     disk::ReadOffset,
     error::RootError,
     fat::Fat,
-    Label,
 };
 use bytemuck::from_bytes_mut;
 use endify::Endify;
 use entry::{
+    BitmapEntry, ClusterAllocation, DirEntry, UpcaseTableEntry, VOLUME_GUID_ENTRY_TYPE,
+    VolumeGuidEntry, VolumeLabelEntry,
     parsed::{Directory, File, FsElement, ParsedFileEntry},
-    BitmapEntry, ClusterAllocation, DirEntry, UpcaseTableEntry, VolumeGuidEntry, VolumeLabelEntry,
-    VOLUME_GUID_ENTRY_TYPE,
 };
 use reader::{
-    cluster::{ClusterChainOptions, ClusterChainReader},
     DirEntryReader,
+    cluster::{ClusterChainOptions, ClusterChainReader},
 };
 
 pub(crate) mod entry;
