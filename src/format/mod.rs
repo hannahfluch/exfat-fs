@@ -1,12 +1,11 @@
-use std::{
-    io::{self, Seek, SeekFrom, Write},
-    ops::{Div, Sub},
-};
+use core::ops::{Div, Sub};
 
 use crate::{
     DEFAULT_BOUNDARY_ALIGNEMENT, FIRST_USABLE_CLUSTER_INDEX, GB, KB, Label, MB,
-    boot_sector::{FileSystemRevision, VolumeFlags, VolumeSerialNumber},
+    boot_sector::{FileSystemRevision, UnixEpochDuration, VolumeFlags, VolumeSerialNumber},
     dir::{RawRoot, entry::DirEntry},
+    disk::{SeekFrom, WriteSeek},
+    error::ExfatError,
     upcase_table::{DEFAULT_UPCASE_TABLE, UPCASE_TABLE_SIZE_BYTES},
 };
 use boot::{BACKUP_BOOT_OFFSET, MAIN_BOOT_OFFSET, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE};
@@ -15,14 +14,16 @@ use checked_num::CheckedU64;
 use derive_builder::Builder;
 
 use crate::{disk, error::ExfatFormatError};
-
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
 /// ExFat boot sector creation.
 mod boot;
 mod fat;
 
 /// A struct of exfat formatting options. It implements the [`derive_builder::Builder`] pattern.
 #[derive(Builder, Copy, Clone, Debug)]
-#[builder(build_fn(validate = "Self::validate"))]
+#[builder(no_std, build_fn(validate = "Self::validate"))]
 pub struct FormatVolumeOptions {
     /// Whether or not to pack the bitmap right after the FAT for better performance and space
     /// usage. Defaults to `true`.
@@ -98,12 +99,12 @@ pub struct Exfat {
     uptable_start_cluster: u32,
 }
 
-impl TryFrom<FormatVolumeOptions> for Exfat {
-    type Error = ExfatFormatError;
-
+impl Exfat {
     /// Attempts to initialize an exFAT formatter instance based on the [`FormatVolumeOptions`]
     /// provided.
-    fn try_from(format_options: FormatVolumeOptions) -> Result<Self, Self::Error> {
+    pub fn try_from<T: UnixEpochDuration>(
+        format_options: FormatVolumeOptions,
+    ) -> Result<Self, ExfatFormatError<T>> {
         let size = format_options.dev_size;
 
         let bytes_per_cluster = default_cluster_size(size);
@@ -240,7 +241,8 @@ impl TryFrom<FormatVolumeOptions> for Exfat {
             uptable_start_cluster + cluster_length / bytes_per_cluster;
 
         let file_system_revision = FileSystemRevision::default();
-        let volume_serial_number = VolumeSerialNumber::try_new()?;
+        let volume_serial_number =
+            VolumeSerialNumber::try_new::<T>().map_err(|err| ExfatFormatError::NoSerial(err))?;
 
         let root_length_bytes = size_of::<DirEntry>() as u32 * 3;
         let cluster_count_used = 0; // in the beginning no cluster is used
@@ -275,18 +277,27 @@ impl TryFrom<FormatVolumeOptions> for Exfat {
 impl Exfat {
     /// Attempts to write the boot region & FAT onto the device. The file length must be the same as the
     /// provided `dev_size` in the [`Exfat`].
-    pub fn write<T: Write + Seek>(&mut self, f: &mut T) -> Result<(), ExfatFormatError> {
-        let old_pos = f.stream_position()?;
-        let len = f.seek(SeekFrom::End(0))?;
+    pub fn write<T: UnixEpochDuration, O: WriteSeek>(
+        &mut self,
+        f: &mut O,
+    ) -> Result<(), ExfatError<T, O>>
+    where
+        T::Err: core::fmt::Debug,
+    {
+        let old_pos = f.stream_position().map_err(|err| ExfatError::Io(err))?;
+        let len = f
+            .seek(SeekFrom::End(0))
+            .map_err(|err| ExfatError::Io(err))?;
 
         if old_pos != len {
-            f.seek(SeekFrom::Start(old_pos))?;
+            f.seek(SeekFrom::Start(old_pos))
+                .map_err(|err| ExfatError::Io(err))?;
         }
 
         assert_eq!(len, self.format_options.dev_size);
 
         if len != self.format_options.dev_size {
-            return Err(ExfatFormatError::InvalidFileSize);
+            return Err(ExfatError::Format(ExfatFormatError::InvalidFileSize));
         }
 
         let size = if self.format_options.full_format {
@@ -296,25 +307,28 @@ impl Exfat {
         };
 
         // clear disk size as needed
-        disk::write_zeroes(f, size, 0)?;
+        disk::write_zeroes(f, size, 0).map_err(|err| ExfatError::Io(err))?;
 
         // write main boot region
-        self.write_boot_region(f, MAIN_BOOT_OFFSET)?;
+        self.write_boot_region(f, MAIN_BOOT_OFFSET)
+            .map_err(|err| ExfatError::Io(err))?;
 
         // write backup boot region
-        self.write_boot_region(f, BACKUP_BOOT_OFFSET)?;
+        self.write_boot_region(f, BACKUP_BOOT_OFFSET)
+            .map_err(|err| ExfatError::Io(err))?;
 
         // write fat
-        self.write_fat(f)?;
+        self.write_fat(f).map_err(|err| ExfatError::Io(err))?;
 
         // write bitmap
-        self.write_bitmap(f)?;
+        self.write_bitmap(f).map_err(|err| ExfatError::Io(err))?;
 
         // write uptable
-        self.write_upcase_table(f)?;
+        self.write_upcase_table(f)
+            .map_err(|err| ExfatError::Io(err))?;
 
         // write root directory
-        self.write_root_dir(f)?;
+        self.write_root_dir(f).map_err(|err| ExfatError::Io(err))?;
         Ok(())
     }
 }
@@ -335,12 +349,12 @@ fn default_cluster_size(size: u64) -> u32 {
 }
 
 impl Exfat {
-    fn write_upcase_table<T: Write + Seek>(&self, device: &mut T) -> io::Result<()> {
+    fn write_upcase_table<T: WriteSeek>(&self, device: &mut T) -> Result<(), T::Err> {
         device.seek(SeekFrom::Start(self.uptable_offset_bytes as u64))?;
         device.write_all(&DEFAULT_UPCASE_TABLE)
     }
 
-    fn write_bitmap<T: Write + Seek>(&self, device: &mut T) -> io::Result<()> {
+    fn write_bitmap<T: WriteSeek>(&self, device: &mut T) -> Result<(), T::Err> {
         let mut bitmap = vec![0u8; self.bitmap_length_bytes as usize];
 
         // number of currently completely used bytes (set to 0xff)
@@ -367,7 +381,7 @@ impl Exfat {
         device.write_all(cast_slice(&bitmap))
     }
 
-    fn write_root_dir<T: Write + Seek>(&self, device: &mut T) -> io::Result<()> {
+    fn write_root_dir<T: WriteSeek>(&self, device: &mut T) -> Result<(), T::Err> {
         let root = RawRoot::new(
             self.format_options.label,
             self.format_options.guid,
@@ -381,11 +395,13 @@ impl Exfat {
     }
 }
 
+#[cfg(test)]
 #[test]
 fn small_format() {
     use crate::Label;
     use crate::format::FormatVolumeOptionsBuilder;
     use std::io::Read;
+    use std::vec::Vec;
 
     let size: u64 = 32 * crate::MB as u64;
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
@@ -402,13 +418,18 @@ fn small_format() {
         .build()
         .expect("building format volume option failed");
 
-    let mut formatter = Exfat::try_from(format_options).expect("formatting failed");
-    formatter.write(&mut f).expect("writing failed");
+    let mut formatter =
+        Exfat::try_from::<std::time::SystemTime>(format_options).expect("formatting failed");
+    formatter
+        .write::<std::time::SystemTime, std::io::Cursor<Vec<u8>>>(&mut f)
+        .expect("writing failed");
 
     let offset_volume_label_entry_bytes = 0x203000;
     let mut read_buffer = vec![0u8; 32];
-    f.seek(std::io::SeekFrom::Start(offset_volume_label_entry_bytes))
-        .unwrap();
+    f.seek(crate::disk::SeekFrom::Start(
+        offset_volume_label_entry_bytes,
+    ))
+    .unwrap();
     f.read_exact(&mut read_buffer).unwrap();
 
     // assert volume label root directory entry is at the expected offset
@@ -433,8 +454,10 @@ fn small_format() {
     );
     let offset_upcase_table_entry_bytes = 0x203060;
 
-    f.seek(std::io::SeekFrom::Start(offset_upcase_table_entry_bytes))
-        .unwrap();
+    f.seek(crate::disk::SeekFrom::Start(
+        offset_upcase_table_entry_bytes,
+    ))
+    .unwrap();
     f.read_exact(&mut read_buffer).unwrap();
 
     // assert upcase table root directory entry is at the expected offset
@@ -452,7 +475,7 @@ fn small_format() {
 
     let offset_bitmap_entry_bytes = 0x203040;
 
-    f.seek(std::io::SeekFrom::Start(offset_bitmap_entry_bytes))
+    f.seek(crate::disk::SeekFrom::Start(offset_bitmap_entry_bytes))
         .unwrap();
     f.read_exact(&mut read_buffer).unwrap();
 

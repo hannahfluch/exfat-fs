@@ -1,9 +1,11 @@
-use std::{io, sync::Arc, time::SystemTimeError};
-
-use crate::disk::ReadOffset;
+use crate::{
+    boot_sector::UnixEpochDuration,
+    disk::{ReadOffset, WriteSeek},
+};
+use alloc::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
-pub enum ExfatFormatError {
+pub enum ExfatFormatError<T: UnixEpochDuration> {
     #[error("Invalid bytes per sector. Must be a power of `2` and between `512` and `4096`: {0}.")]
     InvalidBytesPerSector(u16),
     #[error("Invalid volume size: {0}.")]
@@ -17,13 +19,22 @@ pub enum ExfatFormatError {
     #[error("Boundary alignment is too big: {0}")]
     BoundaryAlignemntTooBig(u32),
     #[error("Unable to generate unique serial number. Error: {0}")]
-    NoSerial(#[from] SystemTimeError),
+    NoSerial(#[source] T::Err),
     #[error("Unable to pack bitmap.")]
     CannotPackBitmap,
     #[error("File size does not match exFAT size.")]
     InvalidFileSize,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ExfatError<T: UnixEpochDuration, O: WriteSeek>
+where
+    T::Err: core::fmt::Debug,
+{
+    #[error("{0}")]
+    Format(#[from] ExfatFormatError<T>),
     #[error("I/O error: {0}.")]
-    Io(#[from] io::Error),
+    Io(#[source] O::Err),
 }
 
 #[derive(Debug, thiserror::Error)]

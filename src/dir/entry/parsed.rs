@@ -1,11 +1,12 @@
-use std::sync::Arc;
-
 use crate::{
     dir::{BootSector, ClusterAllocation, ClusterChainOptions, ClusterChainReader, DirEntry, Fat},
     disk::{self, ReadOffset},
     error::RootError,
     timestamp::{Timestamp, Timestamps},
 };
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 use super::{DirEntryReader, FileAttributes, FileEntry, StreamExtensionEntry};
 
@@ -122,7 +123,7 @@ pub(crate) struct ParsedFileEntry {
 }
 
 impl ParsedFileEntry {
-    pub(crate) fn try_new<R: ReadOffset + std::fmt::Debug>(
+    pub(crate) fn try_new<R: ReadOffset + core::fmt::Debug>(
         file_entry: &FileEntry,
         reader: &mut DirEntryReader<R>,
     ) -> Result<ParsedFileEntry, RootError<R>> {

@@ -1,7 +1,7 @@
 #![allow(dead_code)] // todo: add file reading & writing
 // http://ntfs.com/exfat-directory-structure.htm
 
-use std::mem::transmute;
+use core::mem::transmute;
 
 use enumeric::range_enum;
 

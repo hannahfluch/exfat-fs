@@ -150,8 +150,6 @@ bitflags! {
     }
 }
 
-use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
-
 /// Structure representing the file system revision.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable, Endify)]
@@ -176,8 +174,22 @@ impl Default for FileSystemRevision {
 pub(crate) struct VolumeSerialNumber(u32);
 
 impl VolumeSerialNumber {
-    pub(crate) fn try_new() -> Result<VolumeSerialNumber, SystemTimeError> {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
-        Ok(VolumeSerialNumber((now.as_secs() as u32).to_le()))
+    pub(crate) fn try_new<U: UnixEpochDuration>() -> Result<VolumeSerialNumber, U::Err> {
+        Ok(VolumeSerialNumber((U::as_secs()? as u32).to_le()))
+    }
+}
+
+pub trait UnixEpochDuration {
+    type Err;
+    fn as_secs() -> Result<u64, Self::Err>;
+}
+
+#[cfg(feature = "std")]
+impl UnixEpochDuration for std::time::SystemTime {
+    type Err = std::time::SystemTimeError;
+
+    fn as_secs() -> Result<u64, Self::Err> {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
+        Ok(now.as_secs())
     }
 }

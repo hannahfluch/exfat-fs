@@ -1,11 +1,13 @@
-use std::io::{self, Seek, SeekFrom, Write};
-
-use crate::{FIRST_USABLE_CLUSTER_INDEX, fat::FatEntry};
+use crate::{
+    FIRST_USABLE_CLUSTER_INDEX,
+    disk::{SeekFrom, WriteSeek},
+    fat::FatEntry,
+};
 
 use super::Exfat;
 
 impl Exfat {
-    pub(super) fn write_fat<T: Write + Seek>(&mut self, device: &mut T) -> io::Result<()> {
+    pub(super) fn write_fat<T: WriteSeek>(&mut self, device: &mut T) -> Result<(), T::Err> {
         // write entry 0 (media type)
         self.write_fat_entry(device, FatEntry::media_type(), 0)?;
 
@@ -27,12 +29,12 @@ impl Exfat {
         Ok(())
     }
 
-    fn write_fat_entry<T: Write + Seek>(
+    fn write_fat_entry<T: WriteSeek>(
         &self,
         device: &mut T,
         entry: FatEntry,
         index: u64,
-    ) -> io::Result<()> {
+    ) -> Result<(), T::Err> {
         let offset_bytes = self.fat_offset as u64 * self.format_options.bytes_per_sector as u64
             + index * size_of::<FatEntry>() as u64;
         device.seek(SeekFrom::Start(offset_bytes))?;
@@ -40,12 +42,12 @@ impl Exfat {
     }
 
     /// Writes a cluster chain onto the device and returns the next free FAT entry.
-    fn write_fat_entries<T: Write + Seek>(
+    fn write_fat_entries<T: WriteSeek>(
         &self,
         device: &mut T,
         cluster: u32,
         length: u32,
-    ) -> io::Result<u32> {
+    ) -> Result<u32, T::Err> {
         let count =
             cluster + length.next_multiple_of(self.bytes_per_cluster) / self.bytes_per_cluster;
 
@@ -65,6 +67,7 @@ impl Exfat {
     }
 }
 
+#[cfg(test)]
 #[test]
 fn small_fat_creation() {
     use super::Exfat;
@@ -83,13 +86,16 @@ fn small_fat_creation() {
         .build()
         .unwrap();
 
-    let mut formatter = Exfat::try_from(format_options).unwrap();
+    let mut formatter = Exfat::try_from::<std::time::SystemTime>(format_options).unwrap();
 
-    formatter.write(&mut f).unwrap();
+    formatter
+        .write::<std::time::SystemTime, std::io::Cursor<Vec<u8>>>(&mut f)
+        .unwrap();
 
     assert_eq!(formatter.cluster_count_used, 4);
 }
 
+#[cfg(test)]
 #[test]
 fn medium_fat_creation() {
     use super::Exfat;
@@ -108,9 +114,11 @@ fn medium_fat_creation() {
         .build()
         .unwrap();
 
-    let mut formatter = Exfat::try_from(format_options).unwrap();
+    let mut formatter = Exfat::try_from::<std::time::SystemTime>(format_options).unwrap();
 
-    formatter.write(&mut f).unwrap();
+    formatter
+        .write::<std::time::SystemTime, std::io::Cursor<Vec<u8>>>(&mut f)
+        .unwrap();
 
     assert_eq!(formatter.cluster_count_used, 3);
 }

@@ -1,10 +1,14 @@
-use std::io::{self, Seek, SeekFrom, Write};
-
 use bytemuck::{bytes_of, cast_slice};
 
-use crate::{MB, boot_sector::BootSector, disk};
+use crate::{
+    MB,
+    boot_sector::BootSector,
+    disk::{self, SeekFrom, WriteSeek},
+};
 
 use super::Exfat;
+use alloc::vec;
+use alloc::vec::Vec;
 
 /// Offset for main boot region (in sectors)
 pub(super) const MAIN_BOOT_OFFSET: u64 = 0;
@@ -107,11 +111,11 @@ impl Checksum {
 
 impl Exfat {
     /// Attempts to write a boot region to a disk at the specified sector offet.
-    pub(super) fn write_boot_region<T: Write + Seek>(
+    pub(super) fn write_boot_region<T: WriteSeek>(
         &self,
         f: &mut T,
         mut offset_sectors: u64,
-    ) -> io::Result<()> {
+    ) -> Result<(), T::Err> {
         let mut checksum = Checksum::new(self.format_options.bytes_per_sector);
 
         let boot_sector = BootSector::new(self);
@@ -153,24 +157,24 @@ impl Exfat {
     }
 
     /// Attempts to write a single sector at the specified offset (given in sectors).
-    fn write_sector<T: Write + Seek>(
+    fn write_sector<T: WriteSeek>(
         &self,
         f: &mut T,
         bytes: &[u8],
         offset_sectors: u64,
-    ) -> io::Result<()> {
+    ) -> Result<(), T::Err> {
         f.seek(SeekFrom::Start(self.offset_sector_bytes(offset_sectors)))?;
         f.write_all(bytes)
     }
 
     /// Attempts to write a given amount of extended boot sectors at the specified offset (given in
     /// sectors). Returns the buffer of the extended boot sector.
-    fn write_extended<T: Write + Seek>(
+    fn write_extended<T: WriteSeek>(
         &self,
         f: &mut T,
         offset_sectors: u64,
         amount: u64,
-    ) -> io::Result<Vec<u32>> {
+    ) -> Result<Vec<u32>, T::Err> {
         f.seek(SeekFrom::Start(self.offset_sector_bytes(offset_sectors)))?;
 
         let buffer_len = self.format_options.bytes_per_sector as usize / 4;
@@ -187,12 +191,12 @@ impl Exfat {
     }
 
     /// Attempts to write the checksum sector
-    fn write_checksum<T: Write + Seek>(
+    fn write_checksum<T: WriteSeek>(
         &self,
         f: &mut T,
         checksum: Checksum,
         offset_sectors: u64,
-    ) -> io::Result<()> {
+    ) -> Result<(), T::Err> {
         f.seek(SeekFrom::Start(self.offset_sector_bytes(offset_sectors)))?;
 
         let checksum = checksum.get();
@@ -215,6 +219,7 @@ impl Exfat {
     }
 }
 
+#[cfg(test)]
 #[test]
 fn small_simple() {
     use crate::format::FormatVolumeOptionsBuilder;
@@ -230,7 +235,7 @@ fn small_simple() {
         .build()
         .unwrap();
 
-    let exfat = Exfat::try_from(format_options).unwrap();
+    let exfat = Exfat::try_from::<std::time::SystemTime>(format_options).unwrap();
 
     let boot_sector = BootSector::new(&exfat);
 
@@ -247,6 +252,7 @@ fn small_simple() {
     assert_eq!(boot_sector.sectors_per_cluster_shift, 3);
 }
 
+#[cfg(test)]
 #[test]
 fn small_pack_bitmap() {
     use crate::format::Exfat;
@@ -263,7 +269,7 @@ fn small_pack_bitmap() {
         .build()
         .unwrap();
 
-    let meta = Exfat::try_from(format_options).unwrap();
+    let meta = Exfat::try_from::<std::time::SystemTime>(format_options).unwrap();
 
     let boot_sector = BootSector::new(&meta);
 
@@ -280,6 +286,7 @@ fn small_pack_bitmap() {
     assert_eq!(boot_sector.sectors_per_cluster_shift, 3);
 }
 
+#[cfg(test)]
 #[test]
 fn big_simple() {
     use crate::format::FormatVolumeOptionsBuilder;
@@ -295,7 +302,7 @@ fn big_simple() {
         .build()
         .unwrap();
 
-    let meta = Exfat::try_from(format_options).unwrap();
+    let meta = Exfat::try_from::<std::time::SystemTime>(format_options).unwrap();
 
     let boot_sector = BootSector::new(&meta);
     assert_eq!(boot_sector.jump_boot, [0xEB, 0x76, 0x90]);
@@ -311,9 +318,11 @@ fn big_simple() {
     assert_eq!(boot_sector.sectors_per_cluster_shift, 6);
 }
 
+#[cfg(test)]
 #[test]
 fn boot_region() {
     use super::FormatVolumeOptionsBuilder;
+    use crate::disk::SeekFrom;
     use std::io::Read;
 
     let size: u64 = 32 * crate::MB as u64;
@@ -329,24 +338,25 @@ fn boot_region() {
         .build()
         .unwrap();
 
-    let mut formatter = Exfat::try_from(format_options).unwrap();
+    let mut formatter = Exfat::try_from::<std::time::SystemTime>(format_options).unwrap();
 
     let mut f = std::io::Cursor::new(vec![0u8; size as usize]);
 
-    formatter.write(&mut f).unwrap();
+    formatter
+        .write::<std::time::SystemTime, std::io::Cursor<Vec<u8>>>(&mut f)
+        .unwrap();
 
     let offset_main_checksum_bytes = 11 * bytes_per_sector as u64;
     let offset_backup_checksum_bytes = 23 * bytes_per_sector as u64;
 
     // assert checksum is the same for main boot region and backup boot region
     let mut read_main = vec![0u8; 8];
-    f.seek(std::io::SeekFrom::Start(offset_main_checksum_bytes))
-        .unwrap();
+    f.seek(SeekFrom::Start(offset_main_checksum_bytes)).unwrap();
     f.read_exact(&mut read_main).unwrap();
 
     let mut read_backup = vec![0u8; 8];
 
-    f.seek(std::io::SeekFrom::Start(offset_backup_checksum_bytes))
+    f.seek(SeekFrom::Start(offset_backup_checksum_bytes))
         .unwrap();
     f.read_exact(&mut read_backup).unwrap();
 

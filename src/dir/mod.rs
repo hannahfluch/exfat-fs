@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use crate::{
     Label,
@@ -94,8 +97,8 @@ impl<O: ReadOffset> Root<O> {
 impl<O: ReadOffset> Root<O> {
     pub fn open(device: O) -> Result<Self, RootError<O>>
     where
-        O::Err: std::fmt::Debug,
-        O: std::fmt::Debug,
+        O::Err: core::fmt::Debug,
+        O: core::fmt::Debug,
     {
         let device = Arc::new(device);
         let mut aligned = Box::new(AlignedBootSector([0u8; 512]));

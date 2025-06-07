@@ -12,6 +12,8 @@ use exfat_fs::{
     format::{Exfat, FormatVolumeOptionsBuilder},
 };
 
+use std::{io::Cursor, time::SystemTime};
+
 let size: u64 = 32 * MB as u64;
 let hello_label = Label::new("Hello".to_string()).unwrap();
 
@@ -24,6 +26,9 @@ let format_options = FormatVolumeOptionsBuilder::default()
     .build()
     .unwrap();
 
-let mut formatter = Exfat::try_from(format_options).unwrap();
-formatter.write(&mut file).unwrap();
+let mut formatter = Exfat::try_from::<SystemTime>(format_options).unwrap();
+
+let mut file = Cursor::new(vec![0u8; size as usize]);
+
+formatter.write::<SystemTime, Cursor<Vec<u8>>>(&mut file).unwrap();
 ```

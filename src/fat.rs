@@ -1,12 +1,13 @@
-use bytemuck::{AnyBitPattern, NoUninit, checked::cast_slice};
-use checked_num::CheckedU64;
-use endify::Endify;
-
 use crate::{
     boot_sector::{BootSector, VolumeFlags},
     disk::ReadOffset,
     error::FatLoadError,
 };
+use alloc::vec;
+use alloc::vec::Vec;
+use bytemuck::{AnyBitPattern, NoUninit, checked::cast_slice};
+use checked_num::CheckedU64;
+use endify::Endify;
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, AnyBitPattern, NoUninit, Endify)]

@@ -11,6 +11,8 @@
 //!    format::{Exfat, FormatVolumeOptionsBuilder},
 //! };
 //!
+//! use std::{io::Cursor, time::SystemTime};
+//!
 //! let size: u64 = 32 * MB as u64;
 //! let hello_label = Label::new("Hello".to_string()).unwrap();
 //!
@@ -23,19 +25,26 @@
 //!     .build()
 //!     .unwrap();
 //!
-//! let mut formatter = Exfat::try_from(format_options).unwrap();
+//! let mut formatter = Exfat::try_from::<SystemTime>(format_options).unwrap();
 //!
 //!
-//! # let mut file = std::io::Cursor::new(vec![0u8; size as usize]);
+//! let mut file = Cursor::new(vec![0u8; size as usize]);
 //!
 //!
-//! formatter.write(&mut file).unwrap();
+//! formatter.write::<SystemTime, Cursor<Vec<u8>>>(&mut file).unwrap();
 //! ```
 //!
 //! ## Limitations
 //! Currently, the crate can only be used to format, but not read/write to the fs. no-std support
 //! is also a work-in-progress.
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
 
+#[cfg(any(feature = "std", test))]
+extern crate std;
+
+extern crate alloc;
+
+use alloc::{string::String, vec::Vec};
 pub(crate) mod boot_sector;
 /// Directory abstractions
 pub mod dir;
@@ -78,8 +87,8 @@ impl Label {
         }
     }
 }
-impl std::fmt::Display for Label {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Label {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut converted = [0u16; 11];
 
         for (i, chunk) in self.0[..self.1 as usize * 2].chunks_exact(2).enumerate() {
