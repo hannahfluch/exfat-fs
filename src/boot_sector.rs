@@ -98,9 +98,40 @@ pub(crate) struct BootSector {
 }
 
 impl BootSector {
+    /// Amount of bytes per sector
     #[inline(always)]
     pub(crate) const fn bytes_per_sector(&self) -> u16 {
         1 << self.bytes_per_sector_shift
+    }
+
+    /// Amount of bytes per cluster
+    #[inline(always)]
+    pub(crate) const fn bytes_per_cluster(&self) -> u32 {
+        self.bytes_per_sector() as u32 * (1u32 << self.sectors_per_cluster_shift as u32)
+    }
+
+    /// Amount of sectors per cluster
+    #[inline(always)]
+    pub(crate) const fn sectors_per_cluster(&self) -> u32 {
+        1 << self.sectors_per_cluster_shift
+    }
+    /// Calculates offset in the image of a specified cluster
+    pub fn cluster_offset(&self, index: u32) -> Option<u64> {
+        if index < 2 {
+            return None;
+        }
+
+        let index = index - 2;
+
+        if index >= self.cluster_count {
+            return None;
+        }
+
+        let sector =
+            self.cluster_heap_offset as u64 + self.sectors_per_cluster() as u64 * index as u64;
+        let offset = self.bytes_per_sector() as u64 * sector;
+
+        Some(offset)
     }
 }
 

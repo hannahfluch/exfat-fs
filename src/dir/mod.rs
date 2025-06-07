@@ -1,21 +1,33 @@
+use std::sync::Arc;
+
 use crate::{
-    Label,
     boot_sector::{BootSector, VolumeFlags},
     disk::ReadOffset,
     error::RootError,
     fat::Fat,
+    Label,
 };
 use bytemuck::from_bytes_mut;
 use endify::Endify;
 use entry::{
-    BitmapEntry, DirEntry, UpcaseTableEntry, VOLUME_GUID_ENTRY_TYPE, VolumeGuidEntry,
-    VolumeLabelEntry,
+    parsed::{Directory, File, FsElement, ParsedFileEntry},
+    BitmapEntry, ClusterAllocation, DirEntry, UpcaseTableEntry, VolumeGuidEntry, VolumeLabelEntry,
+    VOLUME_GUID_ENTRY_TYPE,
+};
+use reader::{
+    cluster::{ClusterChainOptions, ClusterChainReader},
+    DirEntryReader,
 };
 
 pub(crate) mod entry;
+pub(crate) mod reader;
+
+/// Buffer used to read the boot sector.
+#[repr(align(8))]
+struct AlignedBootSector([u8; 512]);
 
 /// Root directory entry.
-pub struct Root {
+pub struct RawRoot {
     vol_label: DirEntry,
     vol_guid: DirEntry,
     bitmap: DirEntry,
@@ -23,13 +35,13 @@ pub struct Root {
     items: Vec<DirEntry>,
 }
 
-impl Root {
+impl RawRoot {
     pub(crate) fn new(
         volume_label: Label,
         volume_guid: Option<u128>,
         bitmap_length_bytes: u64,
         uptable_start_cluster: u32,
-    ) -> Root {
+    ) -> RawRoot {
         // create volume label entry
         let vol_label = DirEntry::VolumeLabel(VolumeLabelEntry::new(volume_label));
 
@@ -37,7 +49,7 @@ impl Root {
         let vol_guid = if let Some(guid) = volume_guid {
             DirEntry::VolumeGuid(VolumeGuidEntry::new(guid))
         } else {
-            DirEntry::unused(VOLUME_GUID_ENTRY_TYPE)
+            DirEntry::new_unused(VOLUME_GUID_ENTRY_TYPE)
         };
 
         // create bitmap entry
@@ -46,7 +58,7 @@ impl Root {
         // create upcase table entry
         let uptable = DirEntry::UpcaseTable(UpcaseTableEntry::new(uptable_start_cluster));
 
-        Root {
+        RawRoot {
             vol_label,
             vol_guid,
             bitmap,
@@ -65,18 +77,36 @@ impl Root {
     }
 }
 
-impl Root {
-    pub fn open<R: ReadOffset + std::fmt::Debug>(mut device: R) -> Result<(), RootError<R>>
-    where
-        R::ReadOffsetError: std::fmt::Debug,
-    {
-        let mut bytes = vec![0u8; 512];
-        device.read_exact(0, &mut bytes).map_err(RootError::Io)?;
+pub struct Root<O: ReadOffset> {
+    volume_label: Option<Label>,
+    items: Vec<FsElement<O>>,
+}
 
-        let boot_sector = from_bytes_mut::<BootSector>(&mut bytes);
+impl<O: ReadOffset> Root<O> {
+    pub fn label(&self) -> Option<&Label> {
+        self.volume_label.as_ref()
+    }
+    pub fn items(&self) -> &[FsElement<O>] {
+        &self.items
+    }
+}
+
+impl<O: ReadOffset> Root<O> {
+    pub fn open(device: O) -> Result<Self, RootError<O>>
+    where
+        O::Err: std::fmt::Debug,
+        O: std::fmt::Debug,
+    {
+        let device = Arc::new(device);
+        let mut aligned = Box::new(AlignedBootSector([0u8; 512]));
+        device
+            .read_exact(0, &mut aligned.0[..])
+            .map_err(RootError::Io)?;
+
+        let boot_sector = from_bytes_mut::<BootSector>(&mut aligned.0);
 
         // convert to native endianess
-        let boot_sector = Endify::from_le(*boot_sector);
+        let boot_sector = Arc::new(Endify::from_le(*boot_sector));
 
         // check for fs name
         if boot_sector.filesystem_name != *b"EXFAT   " {
@@ -113,8 +143,123 @@ impl Root {
         }
 
         // parse FAT
-        let _fat = Fat::load(&mut device, &boot_sector)?;
+        let fat = Arc::new(Fat::load(&device, &boot_sector)?);
 
-        todo!("read entries of root directory")
+        let first_cluster = boot_sector.first_cluster_of_root_directory;
+        // check for correct index of root cluster
+        if first_cluster < 2 || first_cluster > boot_sector.cluster_count + 1 {
+            return Err(RootError::InvalidRootDirectoryClusterIndex(first_cluster));
+        }
+
+        let mut reader = DirEntryReader::from(ClusterChainReader::try_new(
+            Arc::clone(&boot_sector),
+            &fat,
+            first_cluster,
+            ClusterChainOptions::default(),
+            Arc::clone(&device),
+        )?);
+
+        // Load root directory
+        let mut allocation_bitmaps: [Option<BitmapEntry>; 2] = [None, None];
+        let mut upcase_table: Option<UpcaseTableEntry> = None;
+        let mut volume_label: Option<Label> = None;
+        let mut items: Vec<FsElement<O>> = Vec::new();
+
+        loop {
+            let entry = reader.read()?;
+
+            // unused entries are ignored
+            if entry.unused() {
+                continue;
+            }
+
+            if !entry.regular() {
+                break;
+            } else if !entry.primary() {
+                return Err(RootError::RootEntryNotPrimary(entry.entry_type()));
+            }
+
+            match entry {
+                DirEntry::EndOfDirectory(_) => todo!(),
+                DirEntry::Invalid => todo!(),
+                DirEntry::Bitmap(bitmap_entry) => {
+                    let index = if allocation_bitmaps[1].is_some() {
+                        return Err(RootError::InvalidNumberOfAllocationBitmaps);
+                    } else if allocation_bitmaps[0].is_some() {
+                        1
+                    } else {
+                        0
+                    };
+                    if index != bitmap_entry.index() || !bitmap_entry.valid() {
+                        return Err(RootError::InvalidAllocationBitmap);
+                    }
+
+                    allocation_bitmaps[index as usize] = Some(bitmap_entry);
+                }
+                DirEntry::UpcaseTable(upcase_table_entry) => {
+                    if upcase_table.is_some() {
+                        return Err(RootError::InvalidNumberOfUpcaseTables);
+                    }
+                    if !upcase_table_entry.valid() {
+                        return Err(RootError::InvalidUpcaseTable);
+                    }
+                    upcase_table = Some(upcase_table_entry);
+                }
+                DirEntry::VolumeLabel(volume_label_entry) => {
+                    if volume_label.is_some() {
+                        return Err(RootError::InvalidNumberOfVolumeLabels);
+                    }
+                    if volume_label_entry.character_count > 11 {
+                        return Err(RootError::InvalidVolumeLabel);
+                    }
+
+                    volume_label = Some(Label(
+                        volume_label_entry.volume_label,
+                        volume_label_entry.character_count,
+                    ));
+                }
+                DirEntry::File(file_entry) => {
+                    let parsed = ParsedFileEntry::try_new(&file_entry, &mut reader)?;
+                    let item = if file_entry.file_attributes.is_directory() {
+                        FsElement::D(Directory::new(
+                            Arc::clone(&device),
+                            Arc::clone(&boot_sector),
+                            Arc::clone(&fat),
+                            parsed.name,
+                            parsed.stream_extension_entry,
+                            parsed.timestamps,
+                        ))
+                    } else {
+                        FsElement::F(File::try_new(
+                            Arc::clone(&device),
+                            Arc::clone(&boot_sector),
+                            &fat,
+                            parsed.name,
+                            parsed.stream_extension_entry,
+                            parsed.timestamps,
+                        )?)
+                    };
+
+                    items.push(item);
+                }
+                _ => return Err(RootError::UnexpectedRootEntry(entry.entry_type())),
+            }
+        }
+
+        // check allocation bitmap count
+        if boot_sector.number_of_fats == 2 && allocation_bitmaps[1].is_none()
+            || allocation_bitmaps[0].is_none()
+        {
+            return Err(RootError::InvalidNumberOfAllocationBitmaps);
+        }
+
+        // check upcase table
+        if upcase_table.is_none() {
+            return Err(RootError::InvalidNumberOfUpcaseTables);
+        }
+        Ok(Root {
+            volume_label,
+            items,
+        })
     }
 }

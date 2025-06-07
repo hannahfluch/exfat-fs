@@ -1,4 +1,8 @@
-use std::io::{self, ErrorKind, Read, Seek, Write};
+use core::ops::Deref;
+use std::{
+    io::{self, ErrorKind, Seek, Write},
+    sync::Arc,
+};
 
 /// Writes zeroes to a file from the given absolute offset (in bytes), up to the given size.
 pub fn write_zeroes<T>(f: &mut T, size: u64, offset: u64) -> io::Result<()>
@@ -24,18 +28,16 @@ where
 
 pub trait PartitionError {
     fn unexpected_eop() -> Self;
+
+    fn cluster_not_found(cluster: u32) -> Self;
 }
 
 pub trait ReadOffset {
-    type ReadOffsetError: PartitionError;
+    type Err: PartitionError + 'static;
 
-    fn read_at(&mut self, offset: u64, buffer: &mut [u8]) -> Result<usize, Self::ReadOffsetError>;
+    fn read_at(&self, offset: u64, buffer: &mut [u8]) -> Result<usize, Self::Err>;
 
-    fn read_exact(
-        &mut self,
-        mut offset: u64,
-        mut buffer: &mut [u8],
-    ) -> Result<(), Self::ReadOffsetError> {
+    fn read_exact(&self, mut offset: u64, mut buffer: &mut [u8]) -> Result<(), Self::Err> {
         while !buffer.is_empty() {
             match self.read_at(offset, buffer) {
                 Ok(0) => break,
@@ -56,12 +58,39 @@ impl PartitionError for io::Error {
     fn unexpected_eop() -> Self {
         io::Error::from(io::ErrorKind::UnexpectedEof)
     }
+
+    fn cluster_not_found(cluster: u32) -> Self {
+        io::Error::new(
+            ErrorKind::Other,
+            format!("cluster #{cluster} is not available"),
+        )
+    }
 }
 
+impl<T: ReadOffset> ReadOffset for &T {
+    type Err = T::Err;
+
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, Self::Err> {
+        (*self).read_at(offset, buf)
+    }
+}
+impl<T: ReadOffset> ReadOffset for Arc<T> {
+    type Err = T::Err;
+
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, Self::Err> {
+        self.deref().read_at(offset, buf)
+    }
+}
 impl ReadOffset for std::fs::File {
-    type ReadOffsetError = io::Error;
-    fn read_at(&mut self, offset: u64, buffer: &mut [u8]) -> Result<usize, Self::ReadOffsetError> {
-        self.seek(io::SeekFrom::Start(offset))?;
-        self.read(buffer)
+    type Err = std::io::Error;
+
+    #[cfg(unix)]
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, Self::Err> {
+        std::os::unix::fs::FileExt::read_at(self, buf, offset)
+    }
+
+    #[cfg(windows)]
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, Self::Err> {
+        std::os::windows::fs::FileExt::seek_read(self, buf, offset)
     }
 }

@@ -1,4 +1,4 @@
-use std::{io, time::SystemTimeError};
+use std::{io, sync::Arc, time::SystemTimeError};
 
 use crate::disk::ReadOffset;
 
@@ -29,7 +29,7 @@ pub enum ExfatFormatError {
 #[derive(Debug, thiserror::Error)]
 pub enum RootError<O: ReadOffset> {
     #[error("I/O error: {0}.")]
-    Io(O::ReadOffsetError),
+    Io(O::Err),
     #[error("The provided volume is not an exFAT filesystem.")]
     WrongFs,
     #[error("Invalid bytes per sector shift detected: {0}. Must be between `9` and `12`")]
@@ -39,7 +39,43 @@ pub enum RootError<O: ReadOffset> {
     #[error("Invalid number of FATs detected: {0}. Must be either `1` or `2`.")]
     InvalidNumberOfFats(u8),
     #[error("Fat could not be parsed: {0}.")]
-    Fat(#[from] FatLoadError<O>),
+    Fat(#[from] FatLoadError<Arc<O>>),
+    #[error(
+        "Invalid index of root directory cluster detected: {0}. Must be bigger than `2` and at most `cluster_count + 1`"
+    )]
+    InvalidRootDirectoryClusterIndex(u32),
+    #[error("Cluster chain could not be parsed: {0}.")]
+    ClusterChain(#[from] ClusterChainError),
+    #[error("Entry Reader Error: {0}.")]
+    DirEntry(#[from] EntryReaderError<O>),
+    #[error(
+        "All directory entries of the root directory must be of type `PRIMARY`. Detected entry type: {0}"
+    )]
+    RootEntryNotPrimary(u8),
+    #[error("More than 2 allocation bitmap root entry fields detected.")]
+    InvalidNumberOfAllocationBitmaps,
+    #[error("Corrupt allocation bitmap entry.")]
+    InvalidAllocationBitmap,
+    #[error("More than 1 upcase table root entry field detected.")]
+    InvalidNumberOfUpcaseTables,
+    #[error("Corrupt upcase table entry.")]
+    InvalidUpcaseTable,
+    #[error("More than 1 volume label root entry field detected.")]
+    InvalidNumberOfVolumeLabels,
+    #[error("Corrupt volume label entry.")]
+    InvalidVolumeLabel,
+    #[error("File entry without a stream extension entry.")]
+    NoStreamExtension,
+    #[error("File entry without a name.")]
+    NoFileName,
+    #[error("Invalid stream extension entry.")]
+    InvalidStreamExtension,
+    #[error("Wrong number of file name entries for file entry.")]
+    WrongFileNameEntries,
+    #[error("Invalid file name entry.")]
+    InvalidFileName,
+    #[error("Unexpected directory entry in root directory. Detected entry type: {0}")]
+    UnexpectedRootEntry(u8),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -47,5 +83,27 @@ pub enum FatLoadError<O: ReadOffset> {
     #[error("FAT starts at invalid offset.")]
     InvalidOffset,
     #[error("Read failed at: {0:#x}.")]
-    ReadFailed(u64, #[source] O::ReadOffsetError),
+    ReadFailed(u64, #[source] O::Err),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ClusterChainError {
+    #[error("Invalid starting cluster.")]
+    InvalidFirstCluster,
+    #[error("Invalid data length for cluster chain.")]
+    InvalidDataLength,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum EntryReaderError<O: ReadOffset> {
+    #[error("Cannot read entry #{0} on cluster #{1}.")]
+    ReadFailed(usize, u32, #[source] O::Err),
+    #[error("{0}")]
+    Entry(#[from] DirEntryError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DirEntryError {
+    #[error("Invalid directory entry detected: {0}.")]
+    InvalidEntry(u8),
 }

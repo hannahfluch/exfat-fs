@@ -1,4 +1,4 @@
-use bytemuck::{AnyBitPattern, NoUninit};
+use bytemuck::{checked::cast_slice, AnyBitPattern, NoUninit};
 use checked_num::CheckedU64;
 use endify::Endify;
 
@@ -22,6 +22,11 @@ impl FatEntry {
     pub(crate) fn eof() -> FatEntry {
         Self(0xffffffff)
     }
+
+    /// Marks the cluster as `bad`
+    pub(crate) fn bad() -> FatEntry {
+        Self(0xfffffff7)
+    }
 }
 
 #[repr(C)]
@@ -32,7 +37,7 @@ pub(crate) struct Fat {
 
 impl Fat {
     pub(crate) fn load<R: ReadOffset>(
-        device: &mut R,
+        device: &R,
         boot: &BootSector,
     ) -> Result<Fat, FatLoadError<R>> {
         assert!([1, 2].contains(&boot.number_of_fats));
@@ -62,5 +67,38 @@ impl Fat {
             .collect::<Vec<FatEntry>>();
 
         Ok(Self { entries })
+    }
+}
+
+pub(crate) struct ClusterChain<'fat> {
+    entries: &'fat [u32],
+    next: u32,
+}
+
+impl<'fat> ClusterChain<'fat> {
+    pub(crate) fn new(table: &'fat Fat, first: u32) -> ClusterChain<'fat> {
+        Self {
+            entries: cast_slice(&table.entries),
+            next: first,
+        }
+    }
+}
+
+impl Iterator for ClusterChain<'_> {
+    type Item = u32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Check next entry.
+        let entries = self.entries;
+        let next = self.next as usize;
+
+        if next < 2 || next >= entries.len() || entries[next] == FatEntry::bad().0 {
+            return None;
+        }
+
+        // Move to next entry.
+        self.next = entries[next];
+
+        Some(next as u32)
     }
 }

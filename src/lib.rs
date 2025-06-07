@@ -45,6 +45,7 @@ pub mod error;
 pub(crate) mod fat;
 /// Filesystem formatting capabilities
 pub mod format;
+pub mod timestamp;
 pub(crate) mod upcase_table;
 
 pub const GB: u32 = 1024 * 1024 * 1024;
@@ -74,6 +75,20 @@ impl Label {
             utf16_bytes[..copy_len].copy_from_slice(&encoded[..copy_len]);
 
             Some(Label(utf16_bytes, len as u8))
+        }
+    }
+}
+impl std::fmt::Display for Label {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut converted = [0u16; 11];
+
+        for (i, chunk) in self.0[..self.1 as usize * 2].chunks_exact(2).enumerate() {
+            converted[i] = u16::from_ne_bytes([chunk[0], chunk[1]]);
+        }
+
+        match String::from_utf16(&converted) {
+            Ok(s) => write!(f, "{}", s),
+            Err(_) => write!(f, "<invalid utf16>"),
         }
     }
 }

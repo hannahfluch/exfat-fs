@@ -1,18 +1,29 @@
 #![allow(dead_code)] // todo: add file reading & writing
-// http://ntfs.com/exfat-directory-structure.htm
+                     // http://ntfs.com/exfat-directory-structure.htm
 
 use std::mem::transmute;
 
-use crate::FIRST_USABLE_CLUSTER_INDEX;
-use crate::Label;
+use enumeric::range_enum;
+
+use crate::error::DirEntryError;
 use crate::upcase_table::{DEFAULT_UPCASE_TABLE, DEFAULT_UPCASE_TABLE_CHECKSUM};
+use crate::Label;
+use crate::FIRST_USABLE_CLUSTER_INDEX;
+
+use super::DirEntryReader;
 
 pub(crate) const VOLUME_GUID_ENTRY_TYPE: u8 = 0xA0;
 
+pub(crate) mod parsed;
+
 /// A generic exFAT directory entry.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 #[repr(C, u8)]
+#[range_enum]
 pub(crate) enum DirEntry {
+    EndOfDirectory([u8; 31]) = 0x0,
+    #[range(0x1..0x80)]
+    Unused([u8; 31]),
     Invalid = 0x80,
     // critical primary:
     Bitmap(BitmapEntry),
@@ -29,6 +40,33 @@ pub(crate) enum DirEntry {
     VendorAllocation(VendorAllocationEntry),
 }
 
+impl TryFrom<[u8; 32]> for DirEntry {
+    type Error = DirEntryError;
+    // FIXME: Use `bytemuck` as soon as this is implemented: https://github.com/Lokathor/bytemuck/pull/292
+    fn try_from(value: [u8; 32]) -> Result<Self, DirEntryError> {
+        let r#type = value[0];
+        match r#type {
+            0x0..=0x83 | 0x85 | 0xA0 | 0xC0..=0xC1 | 0xE0..=0xE1 => {
+                Ok(unsafe { transmute::<[u8; 32], DirEntry>(value) })
+            }
+            _ => Err(DirEntryError::InvalidEntry(r#type)),
+        }
+    }
+}
+
+impl DirEntry {
+    pub(crate) fn regular(&self) -> bool {
+        self.entry_type() >= 0x81
+    }
+
+    pub(crate) fn primary(&self) -> bool {
+        ((self.entry_type() & 0x40) >> 6) == 0
+    }
+    pub(crate) fn unused(&self) -> bool {
+        self.entry_type() > 0x0 && self.entry_type() < 0x80
+    }
+}
+
 impl DirEntry {
     /// Retrieves the bytes of the directory entry.
     pub(crate) fn bytes(&self) -> [u8; 32] {
@@ -43,7 +81,7 @@ impl DirEntry {
         unsafe { *<*const _>::from(self).cast::<u8>() }
     }
 
-    pub(crate) fn unused(r#type: u8) -> DirEntry {
+    pub(crate) fn new_unused(r#type: u8) -> DirEntry {
         assert_eq!(size_of::<DirEntry>(), 32);
         let mut bytes = [0u8; size_of::<DirEntry>()];
         bytes[0] = r#type & !(DirEntry::Invalid.entry_type());
@@ -74,6 +112,10 @@ impl DirEntry {
     }
 }
 
+pub(crate) trait ClusterAllocation {
+    fn valid(&self) -> bool;
+}
+
 // critical primary directory entry types:
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug, Default)]
@@ -92,6 +134,15 @@ impl BitmapEntry {
             first_cluster: FIRST_USABLE_CLUSTER_INDEX.to_le(),
             data_len: data_len.to_le(),
         }
+    }
+    pub(crate) fn index(&self) -> u8 {
+        self.flags & 1
+    }
+}
+
+impl ClusterAllocation for BitmapEntry {
+    fn valid(&self) -> bool {
+        !(self.first_cluster == 0 && self.data_len != 0 || self.first_cluster < 2)
     }
 }
 
@@ -114,6 +165,12 @@ impl UpcaseTableEntry {
             first_cluster: first_cluster.to_le(),
             data_len: DEFAULT_UPCASE_TABLE.len() as u64,
         }
+    }
+}
+
+impl ClusterAllocation for UpcaseTableEntry {
+    fn valid(&self) -> bool {
+        !(self.first_cluster == 0 && self.data_len != 0 || self.first_cluster < 2)
     }
 }
 
@@ -140,7 +197,7 @@ impl VolumeLabelEntry {
 pub(crate) struct FileEntry {
     pub(crate) secondary_count: u8,
     pub(crate) set_checksum: u16,
-    pub(crate) file_attributes: u16,
+    pub(crate) file_attributes: FileAttributes,
     pub(crate) _reserved1: u16,
     pub(crate) create_timestamp: u32,
     pub(crate) last_modified_timestamp: u32,
@@ -156,6 +213,32 @@ pub(crate) struct FileEntry {
 impl FileEntry {
     pub(crate) fn new() -> Self {
         unimplemented!("file entry creation");
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(transparent)]
+pub(crate) struct FileAttributes(u16);
+
+impl FileAttributes {
+    pub(crate) fn is_read_only(self) -> bool {
+        (self.0 & 0x0001) != 0
+    }
+
+    pub(crate) fn is_hidden(self) -> bool {
+        (self.0 & 0x0002) != 0
+    }
+
+    pub(crate) fn is_system(self) -> bool {
+        (self.0 & 0x0004) != 0
+    }
+
+    pub(crate) fn is_directory(self) -> bool {
+        (self.0 & 0x0010) != 0
+    }
+
+    pub(crate) fn is_archive(self) -> bool {
+        (self.0 & 0x0020) != 0
     }
 }
 
@@ -193,8 +276,9 @@ impl VolumeGuidEntry {
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug, Default)]
 pub(crate) struct StreamExtensionEntry {
-    pub(crate) general_secondary_flag: u8,
+    pub(crate) general_secondary_flags: GeneralSecondaryFlags,
     pub(crate) _reserved1: u8,
+    /// Length unicode string filename
     pub(crate) name_length: u8,
     pub(crate) name_hash: u16,
     pub(crate) _reserved2: u16,
@@ -210,10 +294,33 @@ impl StreamExtensionEntry {
     }
 }
 
+impl ClusterAllocation for StreamExtensionEntry {
+    fn valid(&self) -> bool {
+        !(self.first_cluster == 0 && self.data_len != 0 || self.first_cluster < 2)
+            && self.general_secondary_flags.allocation_possible()
+            && self.name_length > 0
+            && self.valid_data_length <= self.data_len
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(transparent)]
+pub(crate) struct GeneralSecondaryFlags(u8);
+
+impl GeneralSecondaryFlags {
+    pub(crate) fn allocation_possible(self) -> bool {
+        (self.0 & 1) != 0
+    }
+
+    pub(crate) fn no_fat_chain(self) -> bool {
+        (self.0 & 2) != 0
+    }
+}
+
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug, Default)]
 pub(crate) struct FileNameEntry {
-    pub(crate) general_secondary_flag: u8,
+    pub(crate) general_secondary_flags: GeneralSecondaryFlags,
     pub(crate) file_name: [u8; 30],
 }
 
