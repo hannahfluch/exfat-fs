@@ -6,9 +6,11 @@ exFAT filesystem formatting in Rust.
 ## Features
 - exFAT formatting
 - `no-std` support
+- reading
 
 ## Usage
 
+### Formatting
 ```rust
 use exfat_fs::{
     MB,
@@ -35,4 +37,22 @@ let mut formatter = Exfat::try_from::<SystemTime>(format_options).unwrap();
 let mut file = Cursor::new(vec![0u8; size as usize]);
 
 formatter.write::<SystemTime, Cursor<Vec<u8>>>(&mut file).unwrap();
+```
+
+### Reading
+```rust
+use exfat_fs::dir::{Root, entry::fs::FsElement};
+use std::{fs::OpenOptions, io::Read};
+
+let file = OpenOptions::new().read(true).open("exfat_vol").unwrap();
+
+// Load root directory
+let mut root = Root::open(file).unwrap();
+
+// Get contents of first element (file)
+if let FsElement::F(ref mut file) = root.items()[0] {
+    let mut buffer = String::default();
+    file.read_to_string(&mut buffer).unwrap();
+    println!("Contents of file: {buffer}");
+}
 ```

@@ -5,9 +5,11 @@
 //! ## Features
 //! - exFAT formatting
 //! - `no-std` support
+//! - reading
 //!
 //! ## Usage
 //!
+//! ### Formatting
 //! ```rust
 //! use exfat_fs::{
 //!    MB,
@@ -38,8 +40,26 @@
 //! formatter.write::<SystemTime, Cursor<Vec<u8>>>(&mut file).unwrap();
 //! ```
 //!
+//! ### Reading
+//! ```no_run
+//! use exfat_fs::dir::{Root, entry::fs::FsElement};
+//! use std::{fs::OpenOptions, io::Read};
+//!
+//! # let file = OpenOptions::new().read(true).open("exfat_vol").unwrap();
+//!
+//! // Load root directory
+//! let mut root = Root::open(file).unwrap();
+//!
+//! // Get contents of first element (file)
+//! if let FsElement::F(ref mut file) = root.items()[0] {
+//!     let mut buffer = String::default();
+//!     file.read_to_string(&mut buffer).unwrap();
+//!     println!("Contents of file: {buffer}");
+//! }
+//! ```
+//!
 //! ## Limitations
-//! Currently, the crate can only be used to format, but not read/write to the fs.
+//! Writing is currently not supported (WIP).
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 
 #[cfg(any(feature = "std", test))]
