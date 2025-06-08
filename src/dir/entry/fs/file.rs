@@ -3,7 +3,7 @@ use alloc::sync::Arc;
 use crate::{
     dir::{BootSector, ClusterChainOptions, ClusterChainReader, Fat, entry::StreamExtensionEntry},
     disk::{self, ReadOffset},
-    error::RootError,
+    error::ClusterChainError,
     timestamp::Timestamps,
 };
 
@@ -11,18 +11,21 @@ use crate::{
 pub struct File<O: disk::ReadOffset> {
     name: String,
     len: u64,
-    reader: Option<ClusterChainReader<O>>,
+    reader: Option<ClusterChainReader<Arc<O>, Arc<BootSector>>>,
     timestamps: Timestamps,
 }
 impl<O: disk::ReadOffset> File<O> {
     pub(crate) fn try_new(
-        disk: Arc<O>,
-        boot: Arc<BootSector>,
+        disk: &Arc<O>,
+        boot: &Arc<BootSector>,
         fat: &Fat,
         name: String,
         stream: StreamExtensionEntry,
         timestamps: Timestamps,
-    ) -> Result<Self, RootError<O>> {
+    ) -> Result<Self, ClusterChainError>
+    where
+        <O as ReadOffset>::Err: core::fmt::Debug,
+    {
         // create a cluster reader
         let first_cluster = stream.first_cluster;
         let len = stream.valid_data_length;
@@ -37,11 +40,11 @@ impl<O: disk::ReadOffset> File<O> {
                 }
             };
             Some(ClusterChainReader::try_new(
-                boot,
+                Arc::clone(boot),
                 fat,
                 first_cluster,
                 options,
-                disk,
+                Arc::clone(disk),
             )?)
         };
 
@@ -133,7 +136,6 @@ where
     D::Err: Into<std::io::Error>,
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        println!("rading!");
         match &mut self.reader {
             Some(v) => v.read(buf).map_err(Into::into),
             None => Ok(0),

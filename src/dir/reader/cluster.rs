@@ -1,4 +1,3 @@
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::{
@@ -9,15 +8,15 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub(crate) struct ClusterChainReader<O: ReadOffset> {
-    boot: Arc<BootSector>,
+pub(crate) struct ClusterChainReader<O, B> {
+    boot: B,
     chain: Vec<u32>,
     data_length: u64,
     offset: u64,
-    disk: Arc<O>,
+    disk: O,
 }
 
-impl<O: ReadOffset> ClusterChainReader<O> {
+impl<O, B: AsRef<BootSector>> ClusterChainReader<O, B> {
     pub(crate) fn data_length(&self) -> u64 {
         self.data_length
     }
@@ -55,24 +54,21 @@ impl Default for ClusterChainOptions {
     }
 }
 
-impl<O> ClusterChainReader<O>
-where
-    O: ReadOffset,
-{
+impl<O, B: AsRef<BootSector>> ClusterChainReader<O, B> {
     pub(crate) fn try_new(
-        boot: Arc<BootSector>,
+        boot: B,
         fat: &Fat,
         first_cluster: u32,
         options: ClusterChainOptions,
-        disk: Arc<O>,
+        disk: O,
     ) -> Result<Self, ClusterChainError> {
         assert!(
-            boot.first_cluster_of_root_directory >= 2
-                && boot.first_cluster_of_root_directory <= boot.cluster_count + 1,
+            boot.as_ref().first_cluster_of_root_directory >= 2
+                && boot.as_ref().first_cluster_of_root_directory <= boot.as_ref().cluster_count + 1,
             "Invalid Root Cluster Index"
         );
 
-        let cluster_size_bytes = boot.bytes_per_cluster() as u64;
+        let cluster_size_bytes = boot.as_ref().bytes_per_cluster() as u64;
 
         let (chain, data_length) = match options {
             ClusterChainOptions::Contiguous { data_length } => {
@@ -95,8 +91,8 @@ where
                 }
 
                 let data_length = data_length.unwrap_or(
-                    boot.bytes_per_sector() as u64
-                        * boot.sectors_per_cluster() as u64
+                    boot.as_ref().bytes_per_sector() as u64
+                        * boot.as_ref().sectors_per_cluster() as u64
                         * chain.len() as u64,
                 );
 
@@ -117,14 +113,11 @@ where
         })
     }
     pub fn current(&self) -> u32 {
-        self.chain[(self.offset / self.boot.bytes_per_cluster() as u64) as usize]
+        self.chain[(self.offset / self.boot.as_ref().bytes_per_cluster() as u64) as usize]
     }
 }
 
-impl<O> ClusterChainReader<O>
-where
-    O: ReadOffset,
-{
+impl<O: ReadOffset, B: AsRef<BootSector>> ClusterChainReader<O, B> {
     pub(crate) fn read(&mut self, buf: &mut [u8]) -> Result<usize, O::Err> {
         // Check if the actual read is required.
         if buf.is_empty() || self.offset == self.data_length {
@@ -133,13 +126,14 @@ where
 
         // Get remaining data in the current cluster.
         let boot = &self.boot;
-        let cluster_size = boot.bytes_per_cluster() as u64;
+        let cluster_size = boot.as_ref().bytes_per_cluster() as u64;
         let cluster_remaining = cluster_size - self.offset % cluster_size;
         let remaining = cluster_remaining.min(self.data_length - self.offset);
 
         // Get the offset in the partition.
         let cluster = self.chain[(self.offset / cluster_size) as usize];
         let offset = boot
+            .as_ref()
             .cluster_offset(cluster)
             .ok_or(PartitionError::cluster_not_found(cluster))?
             + self.offset % cluster_size;

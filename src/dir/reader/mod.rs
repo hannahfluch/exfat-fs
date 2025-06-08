@@ -2,18 +2,18 @@ use cluster::ClusterChainReader;
 
 use crate::{disk::ReadOffset, error::EntryReaderError};
 
-use super::DirEntry;
+use super::{BootSector, DirEntry};
 
 pub(crate) mod cluster;
 
 /// Directory Entry Reader
-pub(crate) struct DirEntryReader<O: ReadOffset> {
-    cluster_reader: ClusterChainReader<O>,
+pub(crate) struct DirEntryReader<O, B> {
+    cluster_reader: ClusterChainReader<O, B>,
     index: usize,
 }
 
-impl<O: ReadOffset> From<ClusterChainReader<O>> for DirEntryReader<O> {
-    fn from(value: ClusterChainReader<O>) -> Self {
+impl<O, B> From<ClusterChainReader<O, B>> for DirEntryReader<O, B> {
+    fn from(value: ClusterChainReader<O, B>) -> Self {
         DirEntryReader {
             cluster_reader: value,
             index: 0,
@@ -21,7 +21,7 @@ impl<O: ReadOffset> From<ClusterChainReader<O>> for DirEntryReader<O> {
     }
 }
 
-impl<O: ReadOffset> DirEntryReader<O> {
+impl<O: ReadOffset, B: AsRef<BootSector>> DirEntryReader<O, B> {
     pub(crate) fn read(&mut self) -> Result<DirEntry, EntryReaderError<O>> {
         // Get current cluster and entry index.
         let cluster = self.cluster_reader.current();

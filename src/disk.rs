@@ -72,7 +72,7 @@ impl From<SeekFrom> for std::io::SeekFrom {
     }
 }
 
-pub trait PartitionError {
+pub trait PartitionError: core::fmt::Debug {
     fn unexpected_eop() -> Self;
 
     fn cluster_not_found(cluster: u32) -> Self;

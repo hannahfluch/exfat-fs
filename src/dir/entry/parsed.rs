@@ -1,7 +1,7 @@
 use crate::{
-    dir::entry::ClusterAllocation,
+    dir::{BootSector, entry::ClusterAllocation},
     disk::ReadOffset,
-    error::RootError,
+    error::FileParserError,
     timestamp::{Timestamp, Timestamps},
 };
 
@@ -16,15 +16,18 @@ pub(crate) struct ParsedFileEntry {
 }
 
 impl ParsedFileEntry {
-    pub(crate) fn try_new<R: ReadOffset + core::fmt::Debug>(
+    pub(crate) fn try_new<R: ReadOffset, B: AsRef<BootSector>>(
         file_entry: &FileEntry,
-        reader: &mut DirEntryReader<R>,
-    ) -> Result<ParsedFileEntry, RootError<R>> {
+        reader: &mut DirEntryReader<R, B>,
+    ) -> Result<ParsedFileEntry, FileParserError<R>>
+    where
+        R::Err: core::fmt::Debug,
+    {
         let secondary_count = file_entry.secondary_count;
         if secondary_count < 1 {
-            return Err(RootError::NoStreamExtension);
+            return Err(FileParserError::NoStreamExtension);
         } else if secondary_count < 2 {
-            return Err(RootError::NoFileName);
+            return Err(FileParserError::NoFileName);
         }
 
         // parse stream extension entry afterward
@@ -37,11 +40,11 @@ impl ParsedFileEntry {
                 || file_entry.file_attributes.is_directory()
                     && stream_extension_entry.valid_data_length != stream_extension_entry.data_len
             {
-                return Err(RootError::InvalidStreamExtension);
+                return Err(FileParserError::InvalidStreamExtension);
             }
             stream_extension_entry
         } else {
-            return Err(RootError::NoStreamExtension);
+            return Err(FileParserError::NoStreamExtension);
         };
 
         // read file names
@@ -54,11 +57,11 @@ impl ParsedFileEntry {
             if let DirEntry::FileName(file_name_entry) = file_name {
                 names.push(file_name_entry);
             } else {
-                return Err(RootError::NoFileName);
+                return Err(FileParserError::NoFileName);
             }
         }
         if names.len() != stream_extension_entry.name_length.div_ceil(15) as usize {
-            return Err(RootError::WrongFileNameEntries);
+            return Err(FileParserError::WrongFileNameEntries);
         }
         // construct a filename
         let mut byte_len = 2 * stream_extension_entry.name_length as usize;
@@ -66,13 +69,13 @@ impl ParsedFileEntry {
 
         for entry in names {
             if entry.general_secondary_flags.allocation_possible() {
-                return Err(RootError::InvalidFileName);
+                return Err(FileParserError::InvalidFileName);
             }
 
             // load name
             let raw_name = &entry.file_name[..30.min(byte_len)];
             if raw_name.len() % 2 != 0 {
-                return Err(RootError::InvalidFileName);
+                return Err(FileParserError::InvalidFileName);
             }
 
             byte_len -= raw_name.len();
@@ -86,7 +89,7 @@ impl ParsedFileEntry {
             }
             match String::from_utf16(file_name) {
                 Ok(part) => name.push_str(&part),
-                Err(_) => return Err(RootError::InvalidFileName),
+                Err(_) => return Err(FileParserError::InvalidFileName),
             }
         }
 

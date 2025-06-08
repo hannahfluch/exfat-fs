@@ -58,7 +58,7 @@ pub enum RootError<O: ReadOffset> {
     #[error("Cluster chain could not be parsed: {0}.")]
     ClusterChain(#[from] ClusterChainError),
     #[error("Entry Reader Error: {0}.")]
-    DirEntry(#[from] EntryReaderError<O>),
+    DirEntry(#[from] EntryReaderError<Arc<O>>),
     #[error(
         "All directory entries of the root directory must be of type `PRIMARY`. Detected entry type: {0}"
     )]
@@ -75,16 +75,8 @@ pub enum RootError<O: ReadOffset> {
     InvalidNumberOfVolumeLabels,
     #[error("Corrupt volume label entry.")]
     InvalidVolumeLabel,
-    #[error("File entry without a stream extension entry.")]
-    NoStreamExtension,
-    #[error("File entry without a name.")]
-    NoFileName,
-    #[error("Invalid stream extension entry.")]
-    InvalidStreamExtension,
-    #[error("Wrong number of file name entries for file entry.")]
-    WrongFileNameEntries,
-    #[error("Invalid file name entry.")]
-    InvalidFileName,
+    #[error("Unable to parse file entry: {0}")]
+    InvalidFileEntry(#[from] FileParserError<Arc<O>>),
     #[error("Unexpected directory entry in root directory. Detected entry type: {0}")]
     UnexpectedRootEntry(u8),
 }
@@ -117,4 +109,40 @@ pub enum EntryReaderError<O: ReadOffset> {
 pub enum DirEntryError {
     #[error("Invalid directory entry detected: {0}.")]
     InvalidEntry(u8),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum FileParserError<O: ReadOffset>
+where
+    O::Err: core::fmt::Debug,
+{
+    #[error("File entry is missing stream extension.")]
+    NoStreamExtension,
+    #[error("File entry is missing file name.")]
+    NoFileName,
+    #[error("{0}")]
+    ReadFailed(#[from] EntryReaderError<O>),
+    #[error("Invalid stream extension entry detected.")]
+    InvalidStreamExtension,
+    #[error("Wrong number of file name entries detected.")]
+    WrongFileNameEntries,
+    #[error("Invalid file name entry detected.")]
+    InvalidFileName,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DirectoryError<O: ReadOffset>
+where
+    O::Err: core::fmt::Debug,
+{
+    #[error("Cannot create a clusters reader for allocation: {0}")]
+    CreateClustersReaderFailed(#[from] ClusterChainError),
+    #[error("Cannot read an entry: {0}")]
+    ReadEntryFailed(#[from] EntryReaderError<Arc<O>>),
+    #[error("Detected directory entry that is not `PRIMARY`. Detected entry type: {0}")]
+    NotPrimaryEntry(u8),
+    #[error("Detected directory entry that is not a file entry. Detected entry type: {0}")]
+    NotFileEntry(u8),
+    #[error("Unable to parse file entry: {0}")]
+    InvalidFileEntry(#[from] FileParserError<Arc<O>>),
 }

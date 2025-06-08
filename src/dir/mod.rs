@@ -96,11 +96,7 @@ impl<O: ReadOffset> Root<O> {
 }
 
 impl<O: ReadOffset> Root<O> {
-    pub fn open(device: O) -> Result<Self, RootError<O>>
-    where
-        O::Err: core::fmt::Debug,
-        O: core::fmt::Debug,
-    {
+    pub fn open(device: O) -> Result<Self, RootError<O>> {
         let device = Arc::new(device);
         let mut aligned = Box::new(AlignedBootSector([0u8; 512]));
         device
@@ -184,8 +180,6 @@ impl<O: ReadOffset> Root<O> {
             }
 
             match entry {
-                DirEntry::EndOfDirectory(_) => todo!(),
-                DirEntry::Invalid => todo!(),
                 DirEntry::Bitmap(bitmap_entry) => {
                     let index = if allocation_bitmaps[1].is_some() {
                         return Err(RootError::InvalidNumberOfAllocationBitmaps);
@@ -235,8 +229,8 @@ impl<O: ReadOffset> Root<O> {
                         ))
                     } else {
                         FsElement::F(File::try_new(
-                            Arc::clone(&device),
-                            Arc::clone(&boot_sector),
+                            &device,
+                            &boot_sector,
                             &fat,
                             parsed.name,
                             parsed.stream_extension_entry,
