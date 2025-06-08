@@ -2,11 +2,12 @@ use alloc::sync::Arc;
 
 use crate::{
     dir::{BootSector, ClusterChainOptions, ClusterChainReader, Fat, entry::StreamExtensionEntry},
-    disk,
+    disk::{self, ReadOffset},
     error::RootError,
     timestamp::Timestamps,
 };
 
+#[derive(Clone)]
 pub struct File<O: disk::ReadOffset> {
     name: String,
     len: u64,
@@ -66,5 +67,76 @@ impl<O: disk::ReadOffset> File<O> {
 
     pub fn timestamps(&self) -> &Timestamps {
         &self.timestamps
+    }
+}
+
+#[cfg(feature = "std")]
+impl<O: disk::ReadOffset> std::io::Seek for File<O> {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        use std::io::{Error, ErrorKind, SeekFrom};
+
+        let Some(r) = &mut self.reader else {
+            return std::io::empty().seek(pos);
+        };
+
+        // get absolute offset.
+        let o = match pos {
+            SeekFrom::Start(v) => v.min(r.data_length()),
+            SeekFrom::End(v) => {
+                if v >= 0 {
+                    r.data_length()
+                } else if let Some(v) = r.data_length().checked_sub(v.unsigned_abs()) {
+                    v
+                } else {
+                    return Err(Error::from(ErrorKind::InvalidInput));
+                }
+            }
+            SeekFrom::Current(v) => v.try_into().map_or_else(
+                |_| {
+                    r.stream_position()
+                        .checked_sub(v.unsigned_abs())
+                        .ok_or_else(|| Error::from(ErrorKind::InvalidInput))
+                },
+                |v| Ok(r.stream_position().saturating_add(v).min(r.data_length())),
+            )?,
+        };
+
+        assert!(r.seek(o));
+
+        Ok(o)
+    }
+
+    fn rewind(&mut self) -> std::io::Result<()> {
+        let r = match &mut self.reader {
+            Some(v) => v,
+            None => return Ok(()),
+        };
+
+        r.rewind();
+
+        Ok(())
+    }
+
+    fn stream_position(&mut self) -> std::io::Result<u64> {
+        let r = match &mut self.reader {
+            Some(v) => v,
+            None => return Ok(0),
+        };
+
+        Ok(r.stream_position())
+    }
+}
+
+#[cfg(feature = "std")]
+impl<D: ReadOffset> std::io::Read for File<D>
+where
+    D::Err: Into<std::io::Error>,
+{
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        println!("rading!");
+        match &mut self.reader {
+            Some(v) => v.read(buf).map_err(Into::into),
+            None => Ok(0),
+        }
     }
 }

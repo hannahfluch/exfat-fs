@@ -8,13 +8,35 @@ use crate::{
     fat::ClusterChain,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ClusterChainReader<O: ReadOffset> {
     boot: Arc<BootSector>,
     chain: Vec<u32>,
     data_length: u64,
     offset: u64,
     disk: Arc<O>,
+}
+
+impl<O: ReadOffset> ClusterChainReader<O> {
+    pub(crate) fn data_length(&self) -> u64 {
+        self.data_length
+    }
+    pub(crate) fn seek(&mut self, off: u64) -> bool {
+        if off > self.data_length {
+            return false;
+        }
+
+        self.offset = off;
+        true
+    }
+
+    pub(crate) fn rewind(&mut self) {
+        self.offset = 0;
+    }
+
+    pub(crate) fn stream_position(&self) -> u64 {
+        self.offset
+    }
 }
 
 /// Whether `NoFatChain` bit is set or cleared.

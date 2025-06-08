@@ -23,7 +23,7 @@ use reader::{
     cluster::{ClusterChainOptions, ClusterChainReader},
 };
 
-pub(crate) mod entry;
+pub mod entry;
 pub(crate) mod reader;
 
 /// Buffer used to read the boot sector.
@@ -90,8 +90,8 @@ impl<O: ReadOffset> Root<O> {
     pub fn label(&self) -> Option<&Label> {
         self.volume_label.as_ref()
     }
-    pub fn items(&self) -> &[FsElement<O>] {
-        &self.items
+    pub fn items(&mut self) -> &mut [FsElement<O>] {
+        &mut self.items
     }
 }
 

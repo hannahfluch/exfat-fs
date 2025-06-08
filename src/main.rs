@@ -27,10 +27,11 @@ fn main() {
 
     //    formatter.write(&mut file).unwrap();
 
-    let root = Root::open(file).unwrap();
+    let mut root = Root::open(file).unwrap();
+    let len = root.items().len();
     println!(
         "Root directory parsed! Volume Label: `{}`, Number of items: `{}`",
         root.label().unwrap(),
-        root.items().len()
+        len
     );
 }
