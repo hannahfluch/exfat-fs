@@ -2,6 +2,10 @@
 //!
 //! exFAT filesystem implementation in Rust.
 //!
+//! ## Features
+//! - exFAT formatting
+//! - `no-std` support
+//!
 //! ## Usage
 //!
 //! ```rust
@@ -35,8 +39,7 @@
 //! ```
 //!
 //! ## Limitations
-//! Currently, the crate can only be used to format, but not read/write to the fs. no-std support
-//! is also a work-in-progress.
+//! Currently, the crate can only be used to format, but not read/write to the fs.
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 
 #[cfg(any(feature = "std", test))]

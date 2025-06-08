@@ -3,6 +3,10 @@
 
 exFAT filesystem formatting in Rust.
 
+## Features
+- exFAT formatting
+- `no-std` support
+
 ## Usage
 
 ```rust
