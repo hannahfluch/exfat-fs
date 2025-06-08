@@ -1,10 +1,10 @@
 [package]
 name = "exfat-fs"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 license = "MIT"
 readme = "README.md"
-description = "exFAT filesystem formatting"
+description = "A comprehensive implementation of the exFAT filesystem"
 repository = "https://github.com/hannahfluch/exfat-fs"
 authors = ["Hannah Fluch"]
 keywords = ["exfat", "filesystem"]
