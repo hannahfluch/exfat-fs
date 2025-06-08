@@ -56,3 +56,9 @@ if let FsElement::F(ref mut file) = root.items()[0] {
     println!("Contents of file: {buffer}");
 }
 ```
+
+## Acknowledgements
+This crate was inspired by the following releated projects:
+- [exfatprogs](https://github.com/exfatprogs/exfatprogs)
+- [obhq/exfat](https://github.com/obhq/exfat)
+
