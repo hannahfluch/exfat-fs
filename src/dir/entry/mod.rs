@@ -14,6 +14,7 @@ use super::DirEntryReader;
 
 pub(crate) const VOLUME_GUID_ENTRY_TYPE: u8 = 0xA0;
 
+pub(crate) mod fs;
 pub(crate) mod parsed;
 
 /// A generic exFAT directory entry.

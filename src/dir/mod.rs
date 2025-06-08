@@ -15,7 +15,8 @@ use endify::Endify;
 use entry::{
     BitmapEntry, ClusterAllocation, DirEntry, UpcaseTableEntry, VOLUME_GUID_ENTRY_TYPE,
     VolumeGuidEntry, VolumeLabelEntry,
-    parsed::{Directory, File, FsElement, ParsedFileEntry},
+    fs::{FsElement, directory::Directory, file::File},
+    parsed::ParsedFileEntry,
 };
 use reader::{
     DirEntryReader,
