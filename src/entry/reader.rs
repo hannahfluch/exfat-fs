@@ -1,10 +1,8 @@
-use cluster::ClusterChainReader;
-
-use crate::{disk::ReadOffset, error::EntryReaderError};
-
-use super::{BootSector, DirEntry};
-
-pub(crate) mod cluster;
+use super::DirEntry;
+use crate::{
+    boot_sector::BootSector, cluster::reader::ClusterChainReader, disk::ReadOffset,
+    error::EntryReaderError,
+};
 
 /// Directory Entry Reader
 pub(crate) struct DirEntryReader<O, B> {

@@ -1,37 +1,28 @@
-use alloc::boxed::Box;
 use alloc::sync::Arc;
-use alloc::vec;
-use alloc::vec::Vec;
+
+use bytemuck::from_bytes_mut;
+use endify::Endify;
 
 use crate::{
     Label,
     boot_sector::{BootSector, VolumeFlags},
+    cluster::{ClusterChainOptions, reader::ClusterChainReader},
     disk::ReadOffset,
+    entry::{
+        BitmapEntry, ClusterAllocation, DirEntry, UpcaseTableEntry, VOLUME_GUID_ENTRY_TYPE,
+        VolumeGuidEntry, VolumeLabelEntry, parsed::ParsedFileEntry, reader::DirEntryReader,
+    },
     error::RootError,
     fat::Fat,
-};
-use bytemuck::from_bytes_mut;
-use endify::Endify;
-use entry::{
-    BitmapEntry, ClusterAllocation, DirEntry, UpcaseTableEntry, VOLUME_GUID_ENTRY_TYPE,
-    VolumeGuidEntry, VolumeLabelEntry,
     fs::{FsElement, directory::Directory, file::File},
-    parsed::ParsedFileEntry,
 };
-use reader::{
-    DirEntryReader,
-    cluster::{ClusterChainOptions, ClusterChainReader},
-};
-
-pub mod entry;
-pub(crate) mod reader;
 
 /// Buffer used to read the boot sector.
 #[repr(align(8))]
 struct AlignedBootSector([u8; 512]);
 
 /// Root directory entry.
-pub struct RawRoot {
+pub(crate) struct RawRoot {
     vol_label: DirEntry,
     vol_guid: DirEntry,
     bitmap: DirEntry,

@@ -41,7 +41,7 @@ formatter.write::<SystemTime, Cursor<Vec<u8>>>(&mut file).unwrap();
 
 ### Reading
 ```rust
-use exfat_fs::dir::{Root, entry::fs::FsElement};
+use exfat_fs::{dir::root::Root, fs::FsElement};
 use std::{fs::OpenOptions, io::Read};
 
 let file = OpenOptions::new().read(true).open("exfat_vol").unwrap();

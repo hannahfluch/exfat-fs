@@ -1,9 +1,12 @@
 use alloc::sync::Arc;
 
 use crate::{
-    dir::{BootSector, ClusterChainOptions, ClusterChainReader, Fat, entry::StreamExtensionEntry},
+    boot_sector::BootSector,
+    cluster::{ClusterChainOptions, reader::ClusterChainReader},
     disk::{self, ReadOffset},
+    entry::StreamExtensionEntry,
     error::ClusterChainError,
+    fat::Fat,
     timestamp::Timestamps,
 };
 

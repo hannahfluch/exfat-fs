@@ -3,11 +3,13 @@ use core::ops::{Div, Sub};
 use crate::{
     DEFAULT_BOUNDARY_ALIGNEMENT, FIRST_USABLE_CLUSTER_INDEX, GB, KB, Label, MB,
     boot_sector::{FileSystemRevision, UnixEpochDuration, VolumeFlags, VolumeSerialNumber},
-    dir::{RawRoot, entry::DirEntry},
     disk::{SeekFrom, WriteSeek},
+    entry::DirEntry,
     error::ExfatError,
-    upcase_table::{DEFAULT_UPCASE_TABLE, UPCASE_TABLE_SIZE_BYTES},
+    root::RawRoot,
 };
+use upcase_table::{DEFAULT_UPCASE_TABLE, UPCASE_TABLE_SIZE_BYTES};
+
 use boot::{BACKUP_BOOT_OFFSET, MAIN_BOOT_OFFSET, MAX_CLUSTER_COUNT, MAX_CLUSTER_SIZE};
 use bytemuck::cast_slice;
 use checked_num::CheckedU64;
@@ -20,6 +22,7 @@ use alloc::vec;
 /// ExFat boot sector creation.
 mod boot;
 mod fat;
+pub(crate) mod upcase_table;
 
 /// A struct of exfat formatting options. It implements the [`derive_builder::Builder`] pattern.
 #[derive(Builder, Copy, Clone, Debug)]

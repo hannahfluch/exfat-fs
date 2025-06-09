@@ -1,11 +1,13 @@
 use crate::{
-    dir::{BootSector, entry::ClusterAllocation},
+    boot_sector::BootSector,
     disk::ReadOffset,
     error::FileParserError,
     timestamp::{Timestamp, Timestamps},
 };
 
-use super::{DirEntry, DirEntryReader, FileAttributes, FileEntry, StreamExtensionEntry};
+use super::{
+    ClusterAllocation, DirEntry, DirEntryReader, FileAttributes, FileEntry, StreamExtensionEntry,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ParsedFileEntry {

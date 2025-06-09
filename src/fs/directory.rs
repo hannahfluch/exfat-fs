@@ -1,10 +1,10 @@
 use crate::{
-    dir::{
-        BootSector, ClusterChainOptions, ClusterChainReader, DirEntry, DirEntryReader, Fat,
-        ParsedFileEntry, entry::StreamExtensionEntry,
-    },
+    boot_sector::BootSector,
+    cluster::{ClusterChainOptions, reader::ClusterChainReader},
     disk::ReadOffset,
+    entry::{DirEntry, StreamExtensionEntry, parsed::ParsedFileEntry, reader::DirEntryReader},
     error::DirectoryError,
+    fat::Fat,
     timestamp::Timestamps,
 };
 use alloc::string::String;
@@ -22,10 +22,12 @@ pub struct Directory<O> {
     timestamps: Timestamps,
 }
 
+type Type = BootSector;
+
 impl<O> Directory<O> {
     pub(crate) fn new(
         disk: Arc<O>,
-        boot: Arc<BootSector>,
+        boot: Arc<Type>,
         fat: Arc<Fat>,
         name: String,
         stream: StreamExtensionEntry,

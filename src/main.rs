@@ -1,7 +1,5 @@
+use exfat_fs::root::Root;
 use std::fs::OpenOptions;
-
-use exfat_fs::dir::Root;
-
 fn main() {
     // let size: u64 = 32 * MB as u64;
     // let hello_label = Label::new("Hello".to_string()).unwrap();

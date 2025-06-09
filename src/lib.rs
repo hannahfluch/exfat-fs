@@ -42,7 +42,7 @@
 //!
 //! ### Reading
 //! ```no_run
-//! use exfat_fs::dir::{Root, entry::fs::FsElement};
+//! use exfat_fs::{root::Root, fs::FsElement};
 //! use std::{fs::OpenOptions, io::Read};
 //!
 //! # let file = OpenOptions::new().read(true).open("exfat_vol").unwrap();
@@ -69,16 +69,20 @@ extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
 pub(crate) mod boot_sector;
-/// Directory abstractions
-pub mod dir;
+/// Cluster I/O
+pub(crate) mod cluster;
 /// Disk utility functions
 pub mod disk;
+/// Internal directory abstractions
+pub(crate) mod entry;
 pub mod error;
 pub(crate) mod fat;
 /// Filesystem formatting capabilities
 pub mod format;
+/// Filesystem abstractions
+pub mod fs;
+pub mod root;
 pub mod timestamp;
-pub(crate) mod upcase_table;
 
 pub const GB: u32 = 1024 * 1024 * 1024;
 pub const MB: u32 = 1024 * 1024;
